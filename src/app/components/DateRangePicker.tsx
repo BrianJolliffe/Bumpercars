@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Calendar, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
+import { Calendar, ChevronDown, ChevronLeft, ChevronRight, Info } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/app/components/ui/popover";
 import { Button } from "@/app/components/ui/button";
 import { Checkbox } from "@/app/components/ui/checkbox";
@@ -10,6 +10,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/app/components/ui/select";
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from "@/app/components/ui/tooltip";
 
 interface DateRangePickerProps {
   value: string;
@@ -31,7 +36,6 @@ const recentlyUsedOptions: DateRangeOption[] = [
   { label: "Last Month", value: "last-month" },
   { label: "Last 3 Months", value: "last-3-months" },
   { label: "Last 12 Months", value: "last-12-months" },
-  { label: "Fiscal Year to Date (YTD)", value: "fiscal-ytd" },
   { label: "Custom Date Range", value: "custom-range" },
 ];
 
@@ -52,7 +56,7 @@ export function DateRangePicker({ value, onChange }: DateRangePickerProps) {
   const [rangeStart, setRangeStart] = useState<Date | null>(new Date(last7DaysStart));
   const [rangeEnd, setRangeEnd] = useState<Date | null>(new Date(today));
   const [selectionPhase, setSelectionPhase] = useState<"start" | "end">("start");
-  const [compareMode, setCompareMode] = useState<string>("year-over-year");
+  const [compareMode, setCompareMode] = useState<string>("period-over-period");
   const quickSelectRef = useRef<HTMLDivElement>(null);
   const customRangeRef = useRef<HTMLLabelElement>(null);
 
@@ -439,6 +443,14 @@ export function DateRangePicker({ value, onChange }: DateRangePickerProps) {
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium text-gray-700">Compare:</span>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Info className="w-4 h-4 text-gray-400 cursor-help" />
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-[260px]">
+                      Controls how percentage deltas are calculated. "Period over Period" compares against the immediately preceding period, while "Year over Year" compares against the same period one year ago.
+                    </TooltipContent>
+                  </Tooltip>
                   <Select value={compareMode} onValueChange={setCompareMode}>
                     <SelectTrigger className="w-[180px] h-8 text-sm border-orange-400 focus:ring-orange-500">
                       <SelectValue />

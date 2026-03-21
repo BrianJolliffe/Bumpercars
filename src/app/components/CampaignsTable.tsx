@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { MoreVertical, Star, X, ChevronLeft, ChevronRight, Info, MessageSquare, Sparkles, ArrowRight, FolderPlus, Check, ArrowUpDown, ArrowDown, ArrowUp, Pencil, Copy, Store, Trash2 } from "lucide-react";
+import { MoreVertical, Star, X, ChevronLeft, ChevronRight, Info, MessageSquare, ArrowRight, Check, ArrowUpDown, ArrowDown, ArrowUp, Pencil, Copy, Store, Trash2 } from "lucide-react";
 import { Button } from "@/app/components/ui/button";
 import { Input } from "@/app/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/app/components/ui/popover";
@@ -7,23 +7,27 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/app/components/ui/alert-dialog"; // forwardRef-compatible
 import { FilterCustomizer, FilterRule } from "@/app/components/FilterCustomizer";
 import { toast } from "sonner";
-import { NotesDrawer, Note } from "@/app/components/NotesDrawer";
-import { OptimizeDrawer } from "@/app/components/OptimizeDrawer";
-import { AISummaryDialog } from "@/app/components/AISummaryDialog";
+// Notes drawer removed — notes are captured on action dialogs only
 import { PacingPopover } from "@/app/components/PacingPopover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/app/components/ui/select";
 
 export interface Campaign {
   id: string;
   name: string;
   category: string;
-  status: "Draft" | "On Hold" | "Running" | "Rejected" | "Ended" | "Paused" | "Scheduled";
+  status: "Draft" | "On Hold" | "Running" | "Rejected" | "Ended" | "Paused" | "Scheduled" | "Paused by a user" | "Paused by system" | "Awaiting Verification" | "Awaiting Verification by Retailer" | "Awaiting Verification by Vantage" | "Awaiting Verification by Ad Platforms" | "Awaiting Retailer Approval" | "Awaiting Brand Approval" | "Awaiting Audience" | "Awaiting Tracking Setup" | "Awaiting External Approval";
   destination: string;
   platform: "Meta" | "Google Search" | "Google PMAX" | "Pinterest";
   objective?: string;
   brandId?: string;
   adTypes?: string;
   mediaChannel?: string;
-  targeting?: string[];
   startDate: string;
   endDate: string;
   budget: number;
@@ -35,6 +39,15 @@ export interface Campaign {
   cpm?: string;
   conversionRate?: string;
   sales?: string;
+  /** Attributed sales — same as total when only one series exists */
+  totalSales?: string;
+  onlineSales?: string;
+  offlineSales?: string;
+  roasTotal?: string;
+  roasOnline?: string;
+  roasOffline?: string;
+  impressions?: number;
+  clicks?: number;
   optimizations: string | {
     type: 'single' | 'multiple' | 'complete';
     action?: string;
@@ -85,55 +98,16 @@ interface CampaignsTableProps {
   setAppliedFiltersInApp?: (filters: FilterRule[]) => void;
   onStarredChange?: (starredIds: Set<string>) => void;
   quickFilters?: {
-    targeting: string[];
+    status: string[];
     objective: string[];
     adTypes: string[];
     mediaPlan: string[];
+    platform: string[];
   };
   onRemoveQuickFilter?: (category: string, value: string) => void;
   onClearAllFilters?: () => void;
-  showDemoNames?: boolean;
-}
-
-function generateDemoName(campaignId: string): string {
-  let hash = 0;
-  for (let i = 0; i < campaignId.length; i++) {
-    hash = ((hash << 5) - hash + campaignId.charCodeAt(i)) | 0;
-  }
-  const abs = Math.abs(hash);
-  const pick = (arr: string[], offset: number) => arr[((abs >> offset) ^ (abs >> (offset + 4))) % arr.length];
-
-  const prefixes = ["PSOC", "SMKT", "DGTL", "PRFM", "BRND", "RTGT", "ACQN", "CMPN"];
-  const cats = ["RM", "EL", "PL", "HW", "AP", "PT", "KT", "LN"];
-  const sub = ["RMP", "SPA", "FLR", "LGT", "DRL", "SNK", "OVN", "VNT"];
-  const goals = ["FBI", "AWR", "CNV", "TRF", "RET", "ENG", "VID", "DSP"];
-  const periods = ["D25P", "W26Q", "M25H", "Q26A", "S25F", "A26W"];
-  const channels = ["Multi", "Srch", "Disp", "Shop", "Video", "Socl"];
-  const brands = ["DEWALT", "RYOBI", "MAKITA", "HUSKY", "RIGID", "BEHR", "DELTA", "KWSET"];
-  const types = ["VNT", "CPC", "CPM", "CPA", "ROAS"];
-  const flags = ["TRF", "ACQ", "RET", "BRD", "PRF"];
-  const seasons = [
-    "SpringOPE_ProTradesProjectsPP", "SummerOutdoor_PatioLiving",
-    "FallRenovation_KitchenBath", "WinterHoliday_GiftGuide",
-    "SpringCleaning_StorageOrg", "BackToSchool_SmartHome",
-    "LaborDay_ApplianceEvent", "MemorialDay_OutdoorPower"
-  ];
-  const suffixes = ["MP", "SP", "DP", "LP", "HP"];
-
-  const numId1 = (abs % 9000000 + 1000000).toString();
-  const numId2 = (((abs >> 8) % 900000) + 100000).toString();
-  const numId3 = ((abs >> 4) % 9000 + 1000).toString();
-  const fy = `FY${25 + (abs % 3)}`;
-  const code = `FR${25 + (abs % 3)}${String.fromCharCode(65 + (abs % 6))}${abs % 999}${String.fromCharCode(65 + ((abs >> 3) % 4))}${abs % 10}GP`;
-
-  return [
-    pick(prefixes, 0), pick(cats, 3), pick(sub, 5), pick(goals, 7),
-    pick(periods, 9), pick(channels, 11), "NA",
-    pick(brands, 13), "NA", pick(types, 15),
-    numId1, "NA", pick(flags, 17), fy, code,
-    numId2, numId3,
-    `${pick(seasons, 19)}_${pick(suffixes, 21)}_${((abs >> 6) % 90000000 + 10000000).toString()}`
-  ].join("-");
+  onOpenAdvancedFilters?: () => void;
+  onOpenQuickFilter?: (category: string) => void;
 }
 
 export function CampaignsTable({ 
@@ -154,7 +128,8 @@ export function CampaignsTable({
   quickFilters,
   onRemoveQuickFilter,
   onClearAllFilters,
-  showDemoNames,
+  onOpenAdvancedFilters,
+  onOpenQuickFilter,
 }: CampaignsTableProps) {
   const totalBudget = campaigns.reduce((sum, c) => sum + c.budget, 0);
   const totalSpend = campaigns.reduce((sum, c) => sum + c.spend, 0);
@@ -168,235 +143,16 @@ export function CampaignsTable({
   const [showCustomViewDialog, setShowCustomViewDialog] = useState(false);
   const [customViewName, setCustomViewName] = useState("");
   const [campaignMenuOpen, setCampaignMenuOpen] = useState<string | null>(null);
-  const [editingCell, setEditingCell] = useState<{ campaignId: string; field: "endDate" | "budget" } | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState<{ campaignId: string; field: "endDate" | "budget" } | null>(null);
   const [editValue, setEditValue] = useState("");
   const [editBudgetFrequency, setEditBudgetFrequency] = useState("Lifetime");
-  const [notesDrawerOpen, setNotesDrawerOpen] = useState(false);
-  const [selectedCampaignForNotes, setSelectedCampaignForNotes] = useState<string | null>(null);
-  const [campaignNotes, setCampaignNotes] = useState<Record<string, Note[]>>({
-    "113602": [
-      {
-        id: "note-1",
-        title: "Creative refresh needed",
-        content: "The current ad creative is showing signs of fatigue. We should test new messaging focused on winter safety features. Consider using customer testimonials in the next iteration.",
-        tags: ["Creative", "Testing", "Winter"],
-        visibility: "Everyone",
-        date: "Feb 3, 2026 at 2:30 pm",
-        createdBy: "Sarah Chen"
-      },
-      {
-        id: "note-2",
-        title: "Budget adjustment recommendation",
-        content: "Pacing at 90% suggests we may underspend. Recommend increasing daily budget by 15% to hit monthly goals. Need approval from Sarah before making changes.",
-        tags: ["Budget", "Pacing"],
-        visibility: "Associates Only",
-        date: "Feb 5, 2026 at 9:15 am",
-        createdBy: "Michael Torres"
-      },
-      {
-        id: "note-3",
-        title: "Audience insights",
-        content: "Analysis shows strong engagement from 35-44 age group. Performance is weaker with younger demographics. Consider creating separate campaign for 18-24 segment with different messaging.",
-        tags: ["Audience", "Performance", "Analysis"],
-        visibility: "Me Only",
-        date: "Feb 1, 2026 at 4:20 pm",
-        createdBy: "Alex Johnson"
-      }
-    ],
-    "113601": [
-      {
-        id: "note-4",
-        title: "Flash sale performing well",
-        content: "ROAS at 3.1x exceeding target of 2.5x. Strong conversion rate on mobile devices. Desktop traffic underperforming - might need bid adjustments for desktop placements.",
-        tags: ["Performance", "Flash Sale", "Mobile"],
-        visibility: "Everyone",
-        date: "Feb 4, 2026 at 11:45 am",
-        createdBy: "Emily Park"
-      },
-      {
-        id: "note-5",
-        title: "Competitor analysis",
-        content: "Noticed competitor running similar promotion. They're offering free shipping which we're not. Recommend adding shipping incentive to maintain competitive edge.",
-        tags: ["Competitive", "Strategy"],
-        visibility: "Associates Only",
-        date: "Jan 28, 2026 at 3:10 pm",
-        createdBy: "James Rodriguez"
-      }
-    ],
-    "113603": [
-      {
-        id: "note-6",
-        title: "Over-pacing alert",
-        content: "Campaign is pacing at 102% — slightly over budget. We should monitor daily spend and consider reducing bids on lower-performing ad groups to bring pacing back in line before end of flight.",
-        tags: ["Pacing", "Budget"],
-        visibility: "Everyone",
-        date: "Feb 6, 2026 at 10:20 am",
-        createdBy: "Sarah Chen"
-      },
-      {
-        id: "note-7",
-        title: "Top product performers identified",
-        content: "Spring lawn mower set and outdoor furniture bundles driving 65% of conversions. Recommend shifting more budget to these product groups and pausing underperforming SKUs.",
-        tags: ["Products", "Optimization"],
-        visibility: "Associates Only",
-        date: "Feb 4, 2026 at 1:45 pm",
-        createdBy: "Michael Torres"
-      }
-    ],
-    "113604": [
-      {
-        id: "note-8",
-        title: "Video completion rates strong",
-        content: "Pinterest promoted pins showing 72% engagement rate, well above the 55% benchmark. Consider extending the campaign flight and allocating additional budget from underperforming channels.",
-        tags: ["Visual", "Pinterest", "Performance"],
-        visibility: "Everyone",
-        date: "Feb 5, 2026 at 4:30 pm",
-        createdBy: "Emily Park"
-      },
-      {
-        id: "note-9",
-        title: "Brand lift study results",
-        content: "Preliminary brand lift study shows 12% increase in unaided brand recall among exposed users. Ad recall is up 18%. Full report expected by end of week from the research team.",
-        tags: ["Brand Lift", "Research"],
-        visibility: "Associates Only",
-        date: "Feb 3, 2026 at 11:00 am",
-        createdBy: "Lisa Wang"
-      }
-    ],
-    "113605": [
-      {
-        id: "note-10",
-        title: "Gift bundle creative outperforming",
-        content: "The 'Perfect Gift' carousel ad is generating 2.3x higher CTR than the standard product shots. Recommend making this the primary creative for the remaining flight days leading up to Feb 14.",
-        tags: ["Creative", "Valentine's Day"],
-        visibility: "Everyone",
-        date: "Feb 8, 2026 at 9:00 am",
-        createdBy: "Alex Johnson"
-      },
-      {
-        id: "note-11",
-        title: "Audience expansion opportunity",
-        content: "Lookalike audience based on past Valentine's purchasers is showing strong early signals. CPA is 22% lower than core targeting. Recommend increasing budget allocation to this segment.",
-        tags: ["Audience", "Targeting"],
-        visibility: "Me Only",
-        date: "Feb 6, 2026 at 2:15 pm",
-        createdBy: "James Rodriguez"
-      }
-    ],
-    "113606": [
-      {
-        id: "note-12",
-        title: "Launch week performance review",
-        content: "New cordless drill line generating strong search volume. Branded search CTR at 4.8% and non-branded at 0.32%. Need to increase bids on competitor keyword groups to capture more share of voice.",
-        tags: ["Launch", "Search", "Bids"],
-        visibility: "Everyone",
-        date: "Jan 20, 2026 at 3:45 pm",
-        createdBy: "Michael Torres"
-      },
-      {
-        id: "note-13",
-        title: "Landing page bounce rate concern",
-        content: "Product page bounce rate is at 68% on mobile — significantly higher than the 45% desktop rate. UX team has been notified. May need a mobile-optimized landing page before we scale spend.",
-        tags: ["UX", "Mobile", "Landing Page"],
-        visibility: "Associates Only",
-        date: "Jan 18, 2026 at 10:30 am",
-        createdBy: "Sarah Chen"
-      }
-    ],
-    "113607": [
-      {
-        id: "note-14",
-        title: "Install cost trending down",
-        content: "Cost per install has dropped from $4.20 to $3.15 over the past week after creative refresh. Continue monitoring — if trend holds, we can request additional budget to scale installs before flight end.",
-        tags: ["CPI", "Mobile App", "Optimization"],
-        visibility: "Everyone",
-        date: "Jan 25, 2026 at 11:30 am",
-        createdBy: "Emily Park"
-      },
-      {
-        id: "note-15",
-        title: "Day 7 retention data",
-        content: "Users acquired through Pinterest ads showing 28% D7 retention vs 19% from other channels. Quality of installs from this campaign is above average. Worth discussing budget reallocation with the growth team.",
-        tags: ["Retention", "Analytics"],
-        visibility: "Me Only",
-        date: "Jan 22, 2026 at 4:00 pm",
-        createdBy: "Lisa Wang"
-      }
-    ],
-    "113608": [
-      {
-        id: "note-16",
-        title: "PMAX asset group performance",
-        content: "Asset group 'Winter Jackets' outperforming all others with 3.1x ROAS vs campaign average of 2.2x. 'Snow Equipment' group underperforming at 1.4x — consider pausing and reallocating budget.",
-        tags: ["PMAX", "Asset Groups", "Performance"],
-        visibility: "Everyone",
-        date: "Jan 30, 2026 at 2:00 pm",
-        createdBy: "Alex Johnson"
-      },
-      {
-        id: "note-17",
-        title: "Inventory sync issue flagged",
-        content: "Three products in the feed are showing as out of stock but still receiving clicks. Submitted ticket to the merchandising team to update the product feed. Should be resolved within 24 hours.",
-        tags: ["Feed", "Inventory", "Issue"],
-        visibility: "Associates Only",
-        date: "Jan 28, 2026 at 9:20 am",
-        createdBy: "James Rodriguez"
-      }
-    ],
-    "113609": [
-      {
-        id: "note-18",
-        title: "B2B targeting refinements",
-        content: "Narrowed targeting to job titles including 'General Contractor', 'Site Manager', and 'Construction Foreman'. Early results show 40% improvement in lead quality. CPL is higher but conversion to purchase is much stronger.",
-        tags: ["B2B", "Targeting", "Contractors"],
-        visibility: "Everyone",
-        date: "Feb 1, 2026 at 10:15 am",
-        createdBy: "Michael Torres"
-      },
-      {
-        id: "note-19",
-        title: "Bundle pricing feedback",
-        content: "Sales team reports positive feedback on the contractor bundle pricing. Several large accounts have placed repeat orders attributed to this campaign. Consider creating a case study for future campaigns.",
-        tags: ["Sales", "Feedback"],
-        visibility: "Associates Only",
-        date: "Jan 28, 2026 at 3:30 pm",
-        createdBy: "Sarah Chen"
-      }
-    ],
-    "113610": [
-      {
-        id: "note-20",
-        title: "Content series performing well",
-        content: "The 'Weekend Project' video series is generating strong engagement — average watch time of 4.2 minutes on 6-minute videos. Comment sentiment is overwhelmingly positive. Plan to produce 4 more episodes.",
-        tags: ["Content", "Video", "Engagement"],
-        visibility: "Everyone",
-        date: "Feb 2, 2026 at 1:30 pm",
-        createdBy: "Lisa Wang"
-      },
-      {
-        id: "note-21",
-        title: "Influencer partnership opportunity",
-        content: "DIY influencer @HomeFixHero (850K subscribers) reached out about a sponsored collaboration. Their audience aligns perfectly with our target demo. Sent details to the partnerships team for review.",
-        tags: ["Influencer", "Partnership"],
-        visibility: "Me Only",
-        date: "Jan 20, 2026 at 11:45 am",
-        createdBy: "Alex Johnson"
-      },
-      {
-        id: "note-22",
-        title: "Seasonal keyword expansion",
-        content: "Added 35 new long-tail keywords around 'spring home improvement' and 'DIY renovation ideas'. Search volume is picking up as we approach March. Expect CTR to improve as seasonal intent increases.",
-        tags: ["Keywords", "SEO", "Seasonal"],
-        visibility: "Associates Only",
-        date: "Jan 15, 2026 at 5:00 pm",
-        createdBy: "Emily Park"
-      }
-    ]
-  });
-  const [optimizeDrawerOpen, setOptimizeDrawerOpen] = useState(false);
-  const [selectedCampaignForOptimize, setSelectedCampaignForOptimize] = useState<string | null>(null);
+  const [editNote, setEditNote] = useState("");
+  const [showEditNote, setShowEditNote] = useState(false);
+  // Notes drawer removed — notes captured on action dialogs only
   const [currentPage, setCurrentPage] = useState(1);
   const campaignsPerPage = 10;
+  /** UI-only page size; pagination still uses `campaignsPerPage` (demo). */
+  const [rowsPerPageDisplay, setRowsPerPageDisplay] = useState("10");
   const [showFilterCustomizer, setShowFilterCustomizer] = useState(false);
   const [enabledFilters, setEnabledFilters] = useState<string[]>([]);
   const [appliedFiltersLocal, setAppliedFiltersLocal] = useState<Array<{
@@ -412,9 +168,6 @@ export function CampaignsTable({
   const [pauseNote, setPauseNote] = useState("");
   const [resumeConfirmCampaign, setResumeConfirmCampaign] = useState<Campaign | null>(null);
   const [resumeNote, setResumeNote] = useState("");
-  const [showAISummary, setShowAISummary] = useState(false);
-  const [aiSummaryCampaignId, setAiSummaryCampaignId] = useState<string | null>(null);
-
   // Sorting state — default sort is lastModified descending
   const [sortColumn, setSortColumn] = useState<string>("lastModified");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
@@ -429,6 +182,8 @@ export function CampaignsTable({
     status: "text",
     destination: "text",
     objective: "text",
+    mediaChannel: "text",
+    platform: "text",
     mediaPlan: "text",
     startDate: "date",
     endDate: "date",
@@ -445,6 +200,15 @@ export function CampaignsTable({
     conversionRate: "numeric",
     sales: "numeric",
     roas: "numeric",
+    totalSales: "numeric",
+    onlineSales: "numeric",
+    offlineSales: "numeric",
+    roasTotal: "numeric",
+    roasOnline: "numeric",
+    roasOffline: "numeric",
+    clicks: "numeric",
+    impressions: "numeric",
+    budgetAtRisk: "numeric",
   };
 
   const handleSort = (column: string) => {
@@ -534,17 +298,6 @@ export function CampaignsTable({
     );
   };
 
-  // Column presets
-  const columnPresets = {
-    essential: ["id", "name", "status", "budget", "spend", "pacing", "roas"],
-    performance: ["id", "name", "status", "spend", "budgetSpent", "pacing", "ctr", "roas"],
-    timeline: ["id", "name", "status", "startDate", "endDate", "flightCompleted", "budget", "spend"]
-  };
-
-  const applyColumnPreset = (preset: keyof typeof columnPresets) => {
-    setVisibleColumns(columnPresets[preset]);
-  };
-
   const toggleColumn = (columnId: string) => {
     setVisibleColumns(prev => 
       prev.includes(columnId)
@@ -561,15 +314,17 @@ export function CampaignsTable({
     objective: 110, startDate: 78, endDate: 78, flightCompleted: 68,
     pacing: 100, budget: 78, spend: 78, budgetSpent: 68, remainingBudget: 82,
     ctr: 48, cpc: 52, cpm: 52, conversionRate: 78, sales: 78,
-    roas: 52, lastModified: 75, mediaPlan: 100,
+    roas: 52, totalSales: 78, onlineSales: 78, offlineSales: 82,
+    roasTotal: 52, roasOnline: 52, roasOffline: 56,
+    clicks: 64, impressions: 76, budgetAtRisk: 90, lastModified: 75, mediaPlan: 100,
   };
-  const alwaysVisibleWidth = 64 + 28 + 160 + 68 + 40; // toggle + star + optimizations + notes + actions
+  const alwaysVisibleWidth = 64 + 28 + 160 + 40; // toggle + star + optimizations + actions
   const dynamicColumnsWidth = visibleColumns.reduce((sum, col) => sum + (columnWidthMap[col] || 100), 0);
   const tableMinWidth = alwaysVisibleWidth + dynamicColumnsWidth;
 
   // Pinned column widths for scrollbar positioning
   const leftPinnedWidth = 64 + 28 + (isColumnVisible("id") ? 60 : 0) + (isColumnVisible("name") ? 200 : 0);
-  const rightPinnedWidth = 160 + 68 + 40; // optimizations + notes + actions
+  const rightPinnedWidth = 160 + 40; // optimizations + actions
 
   // Track if view has been modified from default
   useEffect(() => {
@@ -606,46 +361,7 @@ export function CampaignsTable({
     });
   };
 
-  const handleOpenNotes = (campaignId: string) => {
-    setSelectedCampaignForNotes(campaignId);
-    setNotesDrawerOpen(true);
-    setCampaignMenuOpen(null);
-  };
-
-  const handleAddNote = (campaignId: string, noteData: Omit<Note, "id" | "date" | "createdBy">) => {
-    const now = new Date();
-    const formattedDate = now.toLocaleDateString('en-US', { 
-      month: 'short', 
-      day: 'numeric', 
-      year: 'numeric' 
-    }) + ' at ' + now.toLocaleTimeString('en-US', { 
-      hour: 'numeric', 
-      minute: '2-digit',
-      hour12: true 
-    }).toLowerCase();
-    
-    const newNote: Note = {
-      ...noteData,
-      id: `note-${Date.now()}`,
-      date: formattedDate,
-      createdBy: "Current User", // In a real app, this would come from the authenticated user
-    };
-
-    setCampaignNotes(prev => ({
-      ...prev,
-      [campaignId]: [newNote, ...(prev[campaignId] || [])],
-    }));
-
-    toast.success("Note added successfully", {
-      closeButton: true,
-    });
-  };
-
-  const handleOpenOptimize = (campaignId: string) => {
-    setSelectedCampaignForOptimize(campaignId);
-    setOptimizeDrawerOpen(true);
-    setCampaignMenuOpen(null);
-  };
+  // Notes functions removed — notes are captured on action dialogs only
 
   // Parse helpers for sorting
   const parseDateStr = (str?: string): number => {
@@ -669,6 +385,11 @@ export function CampaignsTable({
   );
 
   const displayCampaigns = useMemo(() => [...campaigns].sort((a, b) => {
+    // Pin starred campaigns to top of the list (regardless of sort column)
+    const aStarred = starredCampaigns.has(a.id) ? 1 : 0;
+    const bStarred = starredCampaigns.has(b.id) ? 1 : 0;
+    if (aStarred !== bStarred) return bStarred - aStarred; // starred first
+
     const type = columnSortType[sortColumn] || "text";
     const dir = sortDirection === "asc" ? 1 : -1;
 
@@ -676,9 +397,8 @@ export function CampaignsTable({
     let bVal: any;
 
     if (sortColumn === "starred" && starredSnapshotForSort) {
-      aVal = starredSnapshotForSort.has(a.id) ? 1 : 0;
-      bVal = starredSnapshotForSort.has(b.id) ? 1 : 0;
-      return (aVal - bVal) * dir;
+      // When explicitly sorting by starred, don't double-pin — just use normal sort
+      return 0;
     } else if (type === "date") {
       if (sortColumn === "lastModified") {
         aVal = parseDateStr(a.lastModified);
@@ -712,8 +432,25 @@ export function CampaignsTable({
           case "cpc": return parseNumericStr(c.cpc);
           case "cpm": return parseNumericStr(c.cpm);
           case "conversionRate": return parseNumericStr(c.conversionRate);
-          case "sales": return parseNumericStr(c.sales);
-          case "roas": return parseNumericStr(c.roas);
+          case "totalSales": return parseNumericStr(c.totalSales ?? c.sales);
+          case "onlineSales": return parseNumericStr(c.onlineSales);
+          case "offlineSales": return parseNumericStr(c.offlineSales);
+          case "roasTotal": return parseNumericStr(c.roasTotal ?? c.roas);
+          case "roasOnline": return parseNumericStr(c.roasOnline);
+          case "roasOffline": return parseNumericStr(c.roasOffline);
+          case "clicks": return c.clicks ?? 0;
+          case "impressions": return c.impressions ?? 0;
+          case "budgetAtRisk": {
+            const pacingNum = parseFloat(c.pacing);
+            if (isNaN(pacingNum) || c.status === "Draft" || c.status === "Ended") return 0;
+            const start = parseDateStr(c.startDate);
+            const end = parseDateStr(c.endDate);
+            const now = Date.now();
+            const fcPct = end <= start ? 0 : Math.min(100, Math.max(0, ((now - start) / (end - start)) * 100));
+            const flightPct = fcPct / 100;
+            const projected = flightPct > 0 ? c.spend / flightPct : 0;
+            return Math.max(0, projected - c.budget);
+          }
           default: return 0;
         }
       };
@@ -740,7 +477,7 @@ export function CampaignsTable({
     }
 
     return (aVal - bVal) * dir;
-  }), [campaigns, sortColumn, sortDirection, starredSnapshotForSort]);
+  }), [campaigns, sortColumn, sortDirection, starredSnapshotForSort, starredCampaigns]);
 
   const adTypeOptions = ["In Grid", "Carousel", "Banner", "Premium Banner"];
 
@@ -918,14 +655,24 @@ export function CampaignsTable({
       startDate: "Start Date",
       endDate: "End Date",
       lastModified: "Last Modified",
-      targeting: "Targeting",
       mediaPlan: "Media Plan",
       flightCompleted: "% Flight Completed",
       budget: "Budget",
+      spend: "Spend",
+      budgetSpent: "% Budget Spent",
+      remainingBudget: "Remaining Budget",
       impressions: "Impressions",
       ctc: "CTC",
       cpr: "CPR",
       roas: "ROAS",
+      roasTotal: "Total ROAS",
+      roasOnline: "Online ROAS",
+      roasOffline: "Offline ROAS",
+      totalSales: "Total Sales",
+      onlineSales: "Online Sales",
+      offlineSales: "Offline Sales",
+      clicks: "Clicks",
+      budgetAtRisk: "Budget at Risk",
       cpm: "CPM",
       ctr: "CTR",
     };
@@ -936,6 +683,15 @@ export function CampaignsTable({
     if (["startDate", "endDate", "lastModified"].includes(field) && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
       const date = new Date(value + "T00:00:00");
       return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+    }
+    const n = parseFloat(String(value).replace(/[^0-9.-]/g, ""));
+    if (!isNaN(n)) {
+      if (["budget", "spend", "remainingBudget", "totalSales", "onlineSales", "offlineSales"].includes(field)) {
+        return `$${n.toLocaleString()}`;
+      }
+      if (field === "budgetSpent" || field === "flightCompleted") {
+        return `${n}%`;
+      }
     }
     return value;
   };
@@ -1151,11 +907,17 @@ export function CampaignsTable({
     return healthResult;
   };
 
+  const renderCampaignOptimizedCallout = () => (
+    <div className="inline-flex items-center gap-1.5 text-xs text-gray-500 whitespace-nowrap">
+      <Check className="w-3.5 h-3.5 shrink-0" />
+      Campaign Optimized
+    </div>
+  );
+
   // Render optimization chips
   const renderOptimizationChips = (campaign: Campaign) => {
-    // Paused and Draft campaigns show no optimizations
     if (campaign.status === "Paused" || campaign.status === "Draft") {
-      return null;
+      return renderCampaignOptimizedCallout();
     }
 
     const optimizations = campaign.optimizations;
@@ -1244,17 +1006,15 @@ export function CampaignsTable({
           </Popover>
         );
       } else {
-        // Campaign Optimized or other status
-        return (
-          <div className="inline-flex items-center gap-1.5 text-xs text-gray-500 whitespace-nowrap">
-            <Check className="w-3.5 h-3.5" />
-            Campaign Optimized
-          </div>
-        );
+        return renderCampaignOptimizedCallout();
       }
     }
-    
-    return null;
+
+    if (typeof optimizations === "object" && optimizations !== null && optimizations.type === "complete") {
+      return renderCampaignOptimizedCallout();
+    }
+
+    return renderCampaignOptimizedCallout();
   };
 
   const renderCampaignRow = (campaign: Campaign) => {
@@ -1355,7 +1115,7 @@ export function CampaignsTable({
         >
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-gray-900 line-clamp-2 leading-tight" title={showDemoNames ? generateDemoName(campaign.id) : campaign.name}>{showDemoNames ? generateDemoName(campaign.id) : campaign.name}</span>
+              <span className="text-sm font-medium text-gray-900 line-clamp-2 leading-tight" title={campaign.name}>{campaign.name}</span>
             </div>
             <div className="flex items-center gap-1.5 text-xs text-gray-500">
               <span className="truncate">{campaign.category}</span>
@@ -1381,66 +1141,53 @@ export function CampaignsTable({
         </td>}
         {isColumnVisible("startDate") && <td className="px-2 py-2 w-[78px] text-sm text-gray-900 whitespace-nowrap">{campaign.startDate}</td>}
         {isColumnVisible("endDate") && <td className="px-2 py-2 w-[78px] text-sm text-gray-900 whitespace-nowrap">
-          <Popover 
-            open={editingCell?.campaignId === campaign.id && editingCell?.field === "endDate"} 
-            onOpenChange={(open) => {
-              if (!open) setEditingCell(null);
-            }}
-          >
-            <PopoverTrigger asChild>
-              <div className="flex items-center gap-1 group/edit">
-                <span>{campaign.endDate}</span>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const parsed = new Date(campaign.endDate);
-                    const isoDate = !isNaN(parsed.getTime()) ? `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}-${String(parsed.getDate()).padStart(2, "0")}` : "";
-                    setEditValue(isoDate);
-                    setEditingCell({ campaignId: campaign.id, field: "endDate" });
-                  }}
-                  className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-gray-200 cursor-pointer"
-                  title="Edit end date"
-                >
-                  <Pencil className="w-3 h-3 text-gray-400" />
-                </button>
-              </div>
-            </PopoverTrigger>
-            <PopoverContent className="w-64 p-3" side="bottom" align="start">
-              <div className="space-y-3">
-                <div className="text-xs font-semibold text-gray-900">Edit End Date</div>
-                <input
-                  type="date"
-                  value={editValue}
-                  onChange={(e) => setEditValue(e.target.value)}
-                  className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#f26318]/30 focus:border-[#f26318]"
-                />
-                <div className="flex items-center gap-2 justify-end">
-                  <button
-                    onClick={() => setEditingCell(null)}
-                    className="px-3 py-1.5 text-xs text-gray-600 hover:text-gray-800 border border-gray-200 rounded-md cursor-pointer transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={() => {
-                      if (editValue && onUpdateCampaign) {
-                        const d = new Date(editValue + "T00:00:00");
-                        const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-                        const formatted = `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
-                        onUpdateCampaign(campaign.id, { endDate: formatted });
-                        toast.success(`End date updated to ${formatted}`);
-                      }
-                      setEditingCell(null);
-                    }}
-                    className="px-3 py-1.5 text-xs text-white bg-[#f26318] hover:bg-[#d9550f] rounded-md cursor-pointer transition-colors"
-                  >
-                    Save
-                  </button>
-                </div>
-              </div>
-            </PopoverContent>
-          </Popover>
+          <div className="flex items-center gap-1 group/edit">
+            <span>{campaign.endDate}</span>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                const parsed = new Date(campaign.endDate);
+                const isoDate = !isNaN(parsed.getTime()) ? `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}-${String(parsed.getDate()).padStart(2, "0")}` : "";
+                setEditValue(isoDate);
+                setEditDialogOpen({ campaignId: campaign.id, field: "endDate" });
+              }}
+              className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-gray-200 cursor-pointer"
+              title="Edit end date"
+            >
+              <Pencil className="w-3 h-3 text-gray-400" />
+            </button>
+          </div>
         </td>}
+        {isColumnVisible("spend") && <td className="px-2 py-2 w-[78px] text-sm text-gray-900 whitespace-nowrap">
+          ${campaign.spend.toLocaleString()}
+        </td>}
+        {isColumnVisible("budget") && <td className="px-2 py-2 w-[78px] text-sm text-gray-900 whitespace-nowrap">
+          <div className="flex items-center gap-1 group/edit">
+            <span>${campaign.budget.toLocaleString()}</span>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setEditValue(String(campaign.budget));
+                setEditBudgetFrequency("Lifetime");
+                setEditDialogOpen({ campaignId: campaign.id, field: "budget" });
+              }}
+              className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-gray-200 cursor-pointer"
+              title="Edit budget"
+            >
+              <Pencil className="w-3 h-3 text-gray-400" />
+            </button>
+          </div>
+        </td>}
+        {isColumnVisible("roasTotal") && <td className="px-2 py-2 w-[52px] text-sm text-gray-900 whitespace-nowrap">
+          <span className="inline-flex items-center gap-0.5">{(campaign.roasTotal ?? campaign.roas)}<TrendArrow value={campaign.benchmarks?.roas?.wow} /></span>
+        </td>}
+        {isColumnVisible("roasOnline") && <td className="px-2 py-2 w-[52px] text-sm text-gray-900 whitespace-nowrap">{campaign.roasOnline ?? "-"}</td>}
+        {isColumnVisible("roasOffline") && <td className="px-2 py-2 w-[56px] text-sm text-gray-900 whitespace-nowrap">{campaign.roasOffline ?? "-"}</td>}
+        {isColumnVisible("ctr") && <td className="px-2 py-2 w-[48px] text-sm text-gray-900 whitespace-nowrap">
+          <span className="inline-flex items-center gap-0.5">{campaign.ctr}<TrendArrow value={campaign.benchmarks?.ctr?.wow} /></span>
+        </td>}
+        {isColumnVisible("clicks") && <td className="px-2 py-2 w-[64px] text-sm text-gray-900 whitespace-nowrap">{(campaign.clicks ?? 0).toLocaleString()}</td>}
+        {isColumnVisible("impressions") && <td className="px-2 py-2 w-[76px] text-sm text-gray-900 whitespace-nowrap">{(campaign.impressions ?? 0).toLocaleString()}</td>}
         {isColumnVisible("pacing") && <td className="px-2 py-2 w-[100px] whitespace-nowrap">
           <PacingPopover campaign={campaign} health={health}>
             <span className="group/pacing inline-flex items-center gap-1 cursor-pointer transition-all [&:hover_span]:font-[600]">
@@ -1449,93 +1196,16 @@ export function CampaignsTable({
             </span>
           </PacingPopover>
         </td>}
-        {isColumnVisible("spend") && <td className="px-2 py-2 w-[78px] text-sm text-gray-900 whitespace-nowrap">
-          ${campaign.spend.toLocaleString()}
-        </td>}
-        {isColumnVisible("budget") && <td className="px-2 py-2 w-[78px] text-sm text-gray-900 whitespace-nowrap">
-          <Popover 
-            open={editingCell?.campaignId === campaign.id && editingCell?.field === "budget"} 
-            onOpenChange={(open) => {
-              if (!open) setEditingCell(null);
-            }}
-          >
-            <PopoverTrigger asChild>
-              <div className="flex items-center gap-1 group/edit">
-                <span>${campaign.budget.toLocaleString()}</span>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setEditValue(String(campaign.budget));
-                    setEditBudgetFrequency("Lifetime");
-                    setEditingCell({ campaignId: campaign.id, field: "budget" });
-                  }}
-                  className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-gray-200 cursor-pointer"
-                  title="Edit budget"
-                >
-                  <Pencil className="w-3 h-3 text-gray-400" />
-                </button>
-              </div>
-            </PopoverTrigger>
-            <PopoverContent className="w-64 p-3" side="bottom" align="start">
-              <div className="space-y-3">
-                <div className="text-xs font-semibold text-gray-900">Edit Budget</div>
-                <div className="space-y-1.5">
-                  <label className="text-xs text-gray-500">Amount</label>
-                  <div className="relative">
-                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-gray-500">$</span>
-                    <input
-                      type="number"
-                      value={editValue}
-                      onChange={(e) => setEditValue(e.target.value)}
-                      min={0}
-                      step={100}
-                      className="w-full pl-6 pr-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#f26318]/30 focus:border-[#f26318]"
-                    />
-                  </div>
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs text-gray-500">Budget Frequency</label>
-                  <select
-                    value={editBudgetFrequency}
-                    onChange={(e) => setEditBudgetFrequency(e.target.value)}
-                    className="w-full pl-2.5 pr-12 py-1.5 text-sm border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#f26318]/30 focus:border-[#f26318] cursor-pointer"
-                  >
-                    <option value="Daily">Daily</option>
-                    <option value="Weekly">Weekly</option>
-                    <option value="Monthly">Monthly</option>
-                    <option value="Lifetime">Lifetime</option>
-                  </select>
-                </div>
-                <div className="flex items-center gap-2 justify-end">
-                  <button
-                    onClick={() => setEditingCell(null)}
-                    className="px-3 py-1.5 text-xs text-gray-600 hover:text-gray-800 border border-gray-200 rounded-md cursor-pointer transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={() => {
-                      const num = parseFloat(editValue);
-                      if (!isNaN(num) && num >= 0 && onUpdateCampaign) {
-                        onUpdateCampaign(campaign.id, { budget: num });
-                        toast.success(`Budget updated to $${num.toLocaleString()} (${editBudgetFrequency})`);
-                      }
-                      setEditingCell(null);
-                    }}
-                    className="px-3 py-1.5 text-xs text-white bg-[#f26318] hover:bg-[#d9550f] rounded-md cursor-pointer transition-colors"
-                  >
-                    Save
-                  </button>
-                </div>
-              </div>
-            </PopoverContent>
-          </Popover>
-        </td>}
-        {isColumnVisible("roas") && <td className="px-2 py-2 w-[52px] text-sm text-gray-900 whitespace-nowrap">
-          <span className="inline-flex items-center gap-0.5">{campaign.roas}<TrendArrow value={campaign.benchmarks?.roas?.wow} /></span>
-        </td>}
-        {isColumnVisible("ctr") && <td className="px-2 py-2 w-[48px] text-sm text-gray-900 whitespace-nowrap">
-          <span className="inline-flex items-center gap-0.5">{campaign.ctr}<TrendArrow value={campaign.benchmarks?.ctr?.wow} /></span>
+        {isColumnVisible("budgetAtRisk") && <td className="px-2 py-2 w-[90px] text-sm whitespace-nowrap">
+          {(() => {
+            const pacingNum = parseFloat(campaign.pacing);
+            if (isNaN(pacingNum) || campaign.status === "Draft" || campaign.status === "Ended") return <span className="text-gray-400">-</span>;
+            const flightPct = calculateFlightCompletion(campaign.startDate, campaign.endDate) / 100;
+            const projectedTotal = flightPct > 0 ? campaign.spend / flightPct : 0;
+            const atRisk = projectedTotal - campaign.budget;
+            if (atRisk <= 0) return <span className="text-green-600">$0</span>;
+            return <span className="text-red-600">${atRisk.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>;
+          })()}
         </td>}
         {isColumnVisible("lastModified") && <td className="px-2 py-2 w-[75px] text-sm text-gray-500">
           <span className="leading-tight">{campaign.lastModified || "N/A"}</span>
@@ -1544,6 +1214,8 @@ export function CampaignsTable({
           <div className="text-sm text-gray-900">{campaign.brandId || '-'}</div>
         </td>}
         {isColumnVisible("objective") && <td className="px-2 py-2 w-[110px] text-sm text-gray-900 whitespace-nowrap">{campaign.objective || "-"}</td>}
+        {isColumnVisible("mediaChannel") && <td className="px-2 py-2 w-[110px] text-sm text-gray-900 whitespace-nowrap">{campaign.mediaChannel || "-"}</td>}
+        {isColumnVisible("platform") && <td className="px-2 py-2 w-[100px] text-sm text-gray-900 whitespace-nowrap">{campaign.platform || "-"}</td>}
         {isColumnVisible("flightCompleted") && <td className="px-2 py-2 w-[68px] text-sm text-gray-900 whitespace-nowrap">{calculateFlightCompletion(campaign.startDate, campaign.endDate).toFixed(2)}%</td>}
         {isColumnVisible("budgetSpent") && <td className="px-2 py-2 w-[68px] text-sm text-gray-900 whitespace-nowrap">{((campaign.spend / campaign.budget) * 100).toFixed(2)}%</td>}
         {isColumnVisible("remainingBudget") && <td className="px-2 py-2 w-[82px] text-sm text-gray-900 whitespace-nowrap">${(campaign.budget - campaign.spend).toLocaleString()}</td>}
@@ -1556,14 +1228,16 @@ export function CampaignsTable({
         {isColumnVisible("conversionRate") && <td className="px-2 py-2 w-[78px] text-sm text-gray-900 whitespace-nowrap">
           {campaign.conversionRate || '-'}
         </td>}
-        {isColumnVisible("sales") && <td className="px-2 py-2 w-[78px] text-sm text-gray-900 whitespace-nowrap">
-          {campaign.sales}
+        {isColumnVisible("totalSales") && <td className="px-2 py-2 w-[78px] text-sm text-gray-900 whitespace-nowrap">
+          {campaign.totalSales ?? campaign.sales ?? "-"}
         </td>}
+        {isColumnVisible("onlineSales") && <td className="px-2 py-2 w-[78px] text-sm text-gray-900 whitespace-nowrap">{campaign.onlineSales ?? "-"}</td>}
+        {isColumnVisible("offlineSales") && <td className="px-2 py-2 w-[82px] text-sm text-gray-900 whitespace-nowrap">{campaign.offlineSales ?? "-"}</td>}
         {isColumnVisible("mediaPlan") && <td className="px-2 py-2 w-[100px] text-sm text-gray-900 whitespace-nowrap">
           {campaign.mediaPlan || '-'}
         </td>}
-        <td 
-          className={`pinned-edge-left sticky right-[108px] z-20 ${rowBg} group-hover:${hoverBgColor} pl-3 pr-2 py-2 w-[160px] min-w-[160px]`}
+        {isColumnVisible("optimizations") && <td
+          className={`pinned-edge-left sticky right-[40px] z-20 ${rowBg} group-hover:${hoverBgColor} pl-3 pr-2 py-2 w-[160px] min-w-[160px]`}
           style={{
             boxShadow: `-10px 0 0 0 ${bgHex}`
           }}
@@ -1575,37 +1249,7 @@ export function CampaignsTable({
           }}
         >
           {renderOptimizationChips(campaign)}
-        </td>
-        <td 
-          className={`sticky right-[40px] z-20 ${rowBg} group-hover:${hoverBgColor} px-2 py-2 w-[68px] min-w-[68px]`}
-          style={{
-            boxShadow: `-1px 0 0 0 ${bgHex}, 1px 0 0 0 ${bgHex}`
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.boxShadow = `-1px 0 0 0 ${hoverHex}, 1px 0 0 0 ${hoverHex}`;
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.boxShadow = `-1px 0 0 0 ${bgHex}, 1px 0 0 0 ${bgHex}`;
-          }}
-        >
-          {(campaignNotes[campaign.id]?.length || 0) > 0 ? (
-            <button
-              onClick={() => handleOpenNotes(campaign.id)}
-              className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors cursor-pointer"
-            >
-              <MessageSquare className="w-4 h-4" />
-              <span>{campaignNotes[campaign.id].length}</span>
-            </button>
-          ) : (
-            <button
-              onClick={() => handleOpenNotes(campaign.id)}
-              className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors cursor-pointer"
-            >
-              <MessageSquare className="w-4 h-4" />
-              <span>0</span>
-            </button>
-          )}
-        </td>
+        </td>}
         <td 
           className={`sticky right-0 z-20 ${rowBg} group-hover:${hoverBgColor} px-2 py-2 w-[40px] min-w-[40px]`}
           style={{
@@ -1632,27 +1276,25 @@ export function CampaignsTable({
                 <Pencil className="w-4 h-4" />
                 <span>Edit</span>
               </button>
-              <button
-                onClick={() => setCampaignMenuOpen(null)}
-                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-100 rounded transition-colors"
+              <div
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left text-gray-400 rounded cursor-default"
               >
                 <Copy className="w-4 h-4" />
-                <span>Duplicate</span>
-              </button>
-              <button
-                onClick={() => setCampaignMenuOpen(null)}
-                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-100 rounded transition-colors"
+                <span>Copy Campaign</span>
+              </div>
+              <div
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left text-gray-400 rounded cursor-default"
               >
                 <Store className="w-4 h-4" />
                 <span>Duplicate to Another Store</span>
-              </button>
+              </div>
               <div className="my-1 border-t border-gray-200" />
               <button
                 onClick={() => setCampaignMenuOpen(null)}
                 className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-100 rounded transition-colors text-red-600"
               >
                 <Trash2 className="w-4 h-4" />
-                <span>Delete</span>
+                <span>{campaign.status === "Draft" ? "Delete Draft" : "End Campaign"}</span>
               </button>
             </PopoverContent>
           </Popover>
@@ -1711,134 +1353,83 @@ export function CampaignsTable({
 
 
 
-      {/* Filter Chips Row - Outside scroll container */}
-      {(selectedStatuses.length > 0 || selectedAdTypes.length > 0 || selectedPacing.length > 0 || selectedObjectives.length > 0 || selectedBrandIds.length > 0 || appliedFilters.some(f => f.values.length > 0) || (quickFilters && (quickFilters.targeting.length > 0 || quickFilters.objective.length > 0 || quickFilters.adTypes.length > 0 || quickFilters.mediaPlan.length > 0))) && (
-        <div className="border-b border-border bg-background px-4 py-3" style={{ fontFamily: 'var(--font-family-inter)' }}>
+      {/* Filter Chips Row - Quick filter pills (grouped) + advanced filter chips */}
+      {((quickFilters?.status?.length ?? 0) > 0 || (quickFilters?.adTypes?.length ?? 0) > 0 || (quickFilters?.platform?.length ?? 0) > 0 || (quickFilters?.objective?.length ?? 0) > 0 || (quickFilters?.mediaPlan?.length ?? 0) > 0 || appliedFilters.some(f => f.field !== 'status' && f.values.length > 0)) && (
+        <div className="border-b border-border bg-background px-4 py-2.5" style={{ fontFamily: 'var(--font-family-inter)' }}>
           <div className="flex items-center gap-2 flex-wrap justify-between">
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-1.5 flex-wrap">
               <span className="text-muted-foreground shrink-0" style={{ fontSize: 'var(--text-xs)', fontWeight: 'var(--font-weight-medium)' }}>{displayCampaigns.length} Campaigns Matched</span>
-              {selectedStatuses.map(status => (
-                <div 
-                  key={status}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-primary/10 text-primary shrink-0"
+              {/* Quick filter grouped pills */}
+              {(quickFilters?.status?.length ?? 0) > 0 && (
+                <button
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#f26318]/10 text-[#f26318] shrink-0 hover:bg-[#f26318]/20 transition-colors cursor-pointer"
                   style={{ fontSize: 'var(--text-xs)', borderRadius: 'var(--radius-chip)' }}
+                  onClick={() => onOpenQuickFilter?.("status")}
                 >
-                  <span>Status: {status}</span>
-                  <button
-                    onClick={() => removeStatusFilter(status)}
-                    className="hover:text-primary/80 cursor-pointer"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                </div>
-              ))}
-              {/* Quick filter pills: targeting */}
-              {quickFilters?.targeting.map(v => (
-                <div 
-                  key={`qf-targeting-${v}`}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-primary/10 text-primary shrink-0"
+                  <span className="font-medium">Status:</span>
+                  <span>{quickFilters!.status.join(", ")}</span>
+                  <span role="button" onClick={(e) => { e.stopPropagation(); onRemoveQuickFilter?.("status", "__all__"); }} className="hover:text-[#f26318]/60"><X className="w-3 h-3" /></span>
+                </button>
+              )}
+              {(quickFilters?.adTypes?.length ?? 0) > 0 && (
+                <button
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#f26318]/10 text-[#f26318] shrink-0 hover:bg-[#f26318]/20 transition-colors cursor-pointer"
                   style={{ fontSize: 'var(--text-xs)', borderRadius: 'var(--radius-chip)' }}
+                  onClick={() => onOpenQuickFilter?.("adTypes")}
                 >
-                  <span>Targeting: {v}</span>
-                  <button onClick={() => onRemoveQuickFilter?.("targeting", v)} className="hover:text-primary/80 cursor-pointer"><X className="w-3 h-3" /></button>
-                </div>
-              ))}
-              {/* Quick filter pills: objective */}
-              {quickFilters?.objective.map(v => (
-                <div 
-                  key={`qf-objective-${v}`}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-primary/10 text-primary shrink-0"
+                  <span className="font-medium">Ad Type:</span>
+                  <span>{quickFilters!.adTypes.join(", ")}</span>
+                  <span role="button" onClick={(e) => { e.stopPropagation(); onRemoveQuickFilter?.("adTypes", "__all__"); }} className="hover:text-[#f26318]/60"><X className="w-3 h-3" /></span>
+                </button>
+              )}
+              {(quickFilters?.platform?.length ?? 0) > 0 && (
+                <button
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#f26318]/10 text-[#f26318] shrink-0 hover:bg-[#f26318]/20 transition-colors cursor-pointer"
                   style={{ fontSize: 'var(--text-xs)', borderRadius: 'var(--radius-chip)' }}
+                  onClick={() => onOpenQuickFilter?.("platform")}
                 >
-                  <span>Objective: {v}</span>
-                  <button onClick={() => onRemoveQuickFilter?.("objective", v)} className="hover:text-primary/80 cursor-pointer"><X className="w-3 h-3" /></button>
-                </div>
-              ))}
-              {/* Quick filter pills: adTypes */}
-              {quickFilters?.adTypes.map(v => (
-                <div 
-                  key={`qf-adtype-${v}`}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-primary/10 text-primary shrink-0"
+                  <span className="font-medium">Platform:</span>
+                  <span>{quickFilters!.platform.join(", ")}</span>
+                  <span role="button" onClick={(e) => { e.stopPropagation(); onRemoveQuickFilter?.("platform", "__all__"); }} className="hover:text-[#f26318]/60"><X className="w-3 h-3" /></span>
+                </button>
+              )}
+              {(quickFilters?.objective?.length ?? 0) > 0 && (
+                <button
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#f26318]/10 text-[#f26318] shrink-0 hover:bg-[#f26318]/20 transition-colors cursor-pointer"
                   style={{ fontSize: 'var(--text-xs)', borderRadius: 'var(--radius-chip)' }}
+                  onClick={() => onOpenQuickFilter?.("objective")}
                 >
-                  <span>Ad Type: {v}</span>
-                  <button onClick={() => onRemoveQuickFilter?.("adTypes", v)} className="hover:text-primary/80 cursor-pointer"><X className="w-3 h-3" /></button>
-                </div>
-              ))}
-              {/* Quick filter pills: mediaPlan */}
-              {quickFilters?.mediaPlan.map(v => (
-                <div 
-                  key={`qf-media-${v}`}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-primary/10 text-primary shrink-0"
-                  style={{ fontSize: 'var(--text-xs)', borderRadius: 'var(--radius-chip)' }}
-                >
-                  <span>Media Plan: {v}</span>
-                  <button onClick={() => onRemoveQuickFilter?.("mediaPlan", v)} className="hover:text-primary/80 cursor-pointer"><X className="w-3 h-3" /></button>
-                </div>
-              ))}
-              {selectedAdTypes.map(adType => (
-                <div 
-                  key={adType}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-card border border-border shrink-0"
-                  style={{ fontSize: 'var(--text-xs)', borderRadius: 'var(--radius-chip)' }}
-                >
-                  <span className="text-foreground">Ad Type: {adType}</span>
-                  <button onClick={() => removeAdTypeFilter(adType)} className="text-muted-foreground hover:text-foreground cursor-pointer"><X className="w-3 h-3" /></button>
-                </div>
-              ))}
-              {selectedPacing.map(pacing => (
-                <div 
-                  key={pacing}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-card border border-border shrink-0"
-                  style={{ fontSize: 'var(--text-xs)', borderRadius: 'var(--radius-chip)' }}
-                >
-                  <span className="text-foreground">Pacing: {pacing}</span>
-                  <button onClick={() => removePacingFilter(pacing)} className="text-muted-foreground hover:text-foreground cursor-pointer"><X className="w-3 h-3" /></button>
-                </div>
-              ))}
-              {selectedObjectives.map(objective => (
-                <div 
-                  key={objective}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-card border border-border shrink-0"
-                  style={{ fontSize: 'var(--text-xs)', borderRadius: 'var(--radius-chip)' }}
-                >
-                  <span className="text-foreground">Objective: {objective}</span>
-                  <button onClick={() => removeObjectiveFilter(objective)} className="text-muted-foreground hover:text-foreground cursor-pointer"><X className="w-3 h-3" /></button>
-                </div>
-              ))}
-              {selectedBrandIds.map(brandId => (
-                <div 
-                  key={brandId}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-card border border-border shrink-0"
-                  style={{ fontSize: 'var(--text-xs)', borderRadius: 'var(--radius-chip)' }}
-                >
-                  <span className="text-foreground">Brand: {brandId}</span>
-                  <button onClick={() => removeBrandIdFilter(brandId)} className="text-muted-foreground hover:text-foreground cursor-pointer"><X className="w-3 h-3" /></button>
-                </div>
-              ))}
-              {appliedFilters.filter(filter => filter.field !== 'status').map((filter) => filter.values.map((value) => (
-                <div 
+                  <span className="font-medium">Objective:</span>
+                  <span>{quickFilters!.objective.join(", ")}</span>
+                  <span role="button" onClick={(e) => { e.stopPropagation(); onRemoveQuickFilter?.("objective", "__all__"); }} className="hover:text-[#f26318]/60"><X className="w-3 h-3" /></span>
+                </button>
+              )}
+              {/* Advanced/view-level filter chips */}
+              {appliedFilters.filter(filter => filter.field !== 'status' && filter.values.length > 0).map((filter) => filter.values.map((value) => (
+                <button
                   key={`${filter.id}-${value}`}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-accent/10 text-accent shrink-0"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-accent/10 text-accent shrink-0 hover:bg-accent/20 transition-colors cursor-pointer"
                   style={{ fontSize: 'var(--text-xs)', borderRadius: 'var(--radius-chip)' }}
+                  onClick={() => onOpenAdvancedFilters?.()}
+                  title="Click to edit in Advanced Filters"
                 >
                   <span>
                     {getFilterFieldLabel(filter.field)}: {filter.operator && filter.operator !== "is" ? `${filter.operator} ` : ""}{formatFilterValue(filter.field, value)}
                   </span>
-                  <button onClick={() => removeAppliedFilter(filter.id)} className="hover:text-accent/80 cursor-pointer"><X className="w-3 h-3" /></button>
-                </div>
+                  <span
+                    role="button"
+                    onClick={(e) => { e.stopPropagation(); removeAppliedFilter(filter.id); }}
+                    className="hover:text-accent/80"
+                  >
+                    <X className="w-3 h-3" />
+                  </span>
+                </button>
               )))}
             </div>
-            <button 
+            <button
               className="text-muted-foreground hover:text-foreground shrink-0 cursor-pointer"
               style={{ fontSize: 'var(--text-xs)', fontWeight: 'var(--font-weight-medium)' }}
               onClick={() => {
-                setSearchQuery("");
-                setSelectedStatuses([]);
-                setSelectedAdTypes([]);
-                setSelectedPacing([]);
-                setSelectedObjectives([]);
-                setSelectedBrandIds([]);
                 setAppliedFilters([]);
                 onClearAllFilters?.();
               }}
@@ -1921,7 +1512,7 @@ export function CampaignsTable({
               </th>}
               {isColumnVisible("destination") && <th className="sticky top-0 z-20 bg-gray-50 px-2 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider w-[88px]">
                 <div className={`flex items-center gap-1 ${isSortActive("destination") ? "text-gray-900" : ""}`}>
-                  Destination
+                  Ad Type
                   <SortIcon column="destination" />
                   <Popover>
                     <PopoverTrigger asChild>
@@ -1931,8 +1522,8 @@ export function CampaignsTable({
                     </PopoverTrigger>
                     <PopoverContent className="w-56 p-3" side="top">
                       <div className="text-xs space-y-1.5">
-                        <div className="font-semibold text-gray-900 mb-2">Destination</div>
-                        <p className="text-gray-600">The landing page or URL where users are directed after clicking the ad. This is the target web page associated with the campaign's call to action.</p>
+                        <div className="font-semibold text-gray-900 mb-2">Ad Type</div>
+                        <p className="text-gray-600">The channel or ad product the campaign uses (for example Search, Performance Max, or a social platform). Indicates how and where ads are served.</p>
                       </div>
                     </PopoverContent>
                   </Popover>
@@ -1976,25 +1567,6 @@ export function CampaignsTable({
                   </Popover>
                 </div>
               </th>}
-              {isColumnVisible("pacing") && <th className="sticky top-0 z-20 bg-gray-50 px-2 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider w-[100px]">
-                <div className={`flex items-center gap-1 ${isSortActive("pacing") ? "text-gray-900" : ""}`}>
-                  Pacing
-                  <SortIcon column="pacing" />
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <button className="text-gray-400 hover:text-gray-600 transition-colors">
-                        <Info className="w-3 h-3" />
-                      </button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-56 p-3" side="top">
-                      <div className="text-xs space-y-1.5">
-                        <div className="font-semibold text-gray-900 mb-2">Pacing</div>
-                        <p className="text-gray-600">Measures how campaign spend is tracking relative to the ideal spending rate. Calculated by comparing actual spend against expected spend based on the campaign timeline and total budget. A value near 100% indicates the campaign is on track to fully utilise its budget by the end date.</p>
-                      </div>
-                    </PopoverContent>
-                  </Popover>
-                </div>
-              </th>}
               {isColumnVisible("spend") && <th className="sticky top-0 z-20 bg-gray-50 px-2 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider w-[78px]">
                 <div className={`flex items-center gap-1 ${isSortActive("spend") ? "text-gray-900" : ""}`}>
                   Spend
@@ -2033,23 +1605,22 @@ export function CampaignsTable({
                   </Popover>
                 </div>
               </th>}
-              {isColumnVisible("roas") && <th className="sticky top-0 z-20 bg-gray-50 px-2 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider w-[52px]">
-                <div className={`flex items-center gap-1 ${isSortActive("roas") ? "text-gray-900" : ""}`}>
-                  <div>ROAS</div>
-                  <SortIcon column="roas" />
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <button className="text-gray-400 hover:text-gray-600 transition-colors">
-                        <Info className="w-3 h-3" />
-                      </button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-56 p-3" side="top">
-                      <div className="text-xs space-y-1.5">
-                        <div className="font-semibold text-gray-900 mb-2">ROAS (Return on Ad Spend)</div>
-                        <p className="text-gray-600">Return on Ad Spend (ROAS). The revenue generated per dollar spent. For example, a value of 2.0x means $2 in attributed revenue for every $1 spent on the campaign.</p>
-                      </div>
-                    </PopoverContent>
-                  </Popover>
+              {isColumnVisible("roasTotal") && <th className="sticky top-0 z-20 bg-gray-50 px-2 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider w-[52px]">
+                <div className={`flex items-center gap-1 ${isSortActive("roasTotal") ? "text-gray-900" : ""}`}>
+                  <div>Total<br/>ROAS</div>
+                  <SortIcon column="roasTotal" />
+                </div>
+              </th>}
+              {isColumnVisible("roasOnline") && <th className="sticky top-0 z-20 bg-gray-50 px-2 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider w-[52px]">
+                <div className={`flex items-center gap-1 ${isSortActive("roasOnline") ? "text-gray-900" : ""}`}>
+                  <div>Online<br/>ROAS</div>
+                  <SortIcon column="roasOnline" />
+                </div>
+              </th>}
+              {isColumnVisible("roasOffline") && <th className="sticky top-0 z-20 bg-gray-50 px-2 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider w-[56px]">
+                <div className={`flex items-center gap-1 ${isSortActive("roasOffline") ? "text-gray-900" : ""}`}>
+                  <div>Offline<br/>ROAS</div>
+                  <SortIcon column="roasOffline" />
                 </div>
               </th>}
               {isColumnVisible("ctr") && <th className="sticky top-0 z-20 bg-gray-50 px-2 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider w-[48px]">
@@ -2066,6 +1637,56 @@ export function CampaignsTable({
                       <div className="text-xs space-y-1.5">
                         <div className="font-semibold text-gray-900 mb-2">CTR (Click-Through Rate)</div>
                         <p className="text-gray-600">Click-Through Rate. The percentage of ad impressions that resulted in a user clicking through to the destination. Calculated as total clicks divided by total impressions, expressed as a percentage. A higher CTR generally indicates more engaging ad creative.</p>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </th>}
+              {isColumnVisible("clicks") && <th className="sticky top-0 z-20 bg-gray-50 px-2 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider w-[64px]">
+                <div className={`flex items-center gap-1 ${isSortActive("clicks") ? "text-gray-900" : ""}`}>
+                  Clicks
+                  <SortIcon column="clicks" />
+                </div>
+              </th>}
+              {isColumnVisible("impressions") && <th className="sticky top-0 z-20 bg-gray-50 px-2 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider w-[76px]">
+                <div className={`flex items-center gap-1 ${isSortActive("impressions") ? "text-gray-900" : ""}`}>
+                  <div>Impr.</div>
+                  <SortIcon column="impressions" />
+                </div>
+              </th>}
+              {isColumnVisible("pacing") && <th className="sticky top-0 z-20 bg-gray-50 px-2 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider w-[100px]">
+                <div className={`flex items-center gap-1 ${isSortActive("pacing") ? "text-gray-900" : ""}`}>
+                  Pacing
+                  <SortIcon column="pacing" />
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button className="text-gray-400 hover:text-gray-600 transition-colors">
+                        <Info className="w-3 h-3" />
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-56 p-3" side="top">
+                      <div className="text-xs space-y-1.5">
+                        <div className="font-semibold text-gray-900 mb-2">Pacing</div>
+                        <p className="text-gray-600">Measures how campaign spend is tracking relative to the ideal spending rate. Calculated by comparing actual spend against expected spend based on the campaign timeline and total budget. A value near 100% indicates the campaign is on track to fully utilise its budget by the end date.</p>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </th>}
+              {isColumnVisible("budgetAtRisk") && <th className="sticky top-0 z-20 bg-gray-50 px-2 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider w-[90px]">
+                <div className={`flex items-center gap-1 ${isSortActive("budgetAtRisk") ? "text-gray-900" : ""}`}>
+                  <div>Budget<br/>at Risk</div>
+                  <SortIcon column="budgetAtRisk" />
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button className="text-gray-400 hover:text-gray-600 transition-colors">
+                        <Info className="w-3 h-3" />
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-56 p-3" side="top">
+                      <div className="text-xs space-y-1.5">
+                        <div className="font-semibold text-gray-900 mb-2">Budget at Risk</div>
+                        <p className="text-gray-600">The estimated dollar amount of overspend projected at the current pace. Calculated by projecting total spend to end of flight based on current spend rate relative to flight completion. $0 means the campaign is on track or underpacing.</p>
                       </div>
                     </PopoverContent>
                   </Popover>
@@ -2126,6 +1747,18 @@ export function CampaignsTable({
                       </div>
                     </PopoverContent>
                   </Popover>
+                </div>
+              </th>}
+              {isColumnVisible("mediaChannel") && <th className="sticky top-0 z-20 bg-gray-50 px-2 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider w-[110px]">
+                <div className={`flex items-center gap-1 ${isSortActive("mediaChannel") ? "text-gray-900" : ""}`}>
+                  <div>Media<br/>Channel</div>
+                  <SortIcon column="mediaChannel" />
+                </div>
+              </th>}
+              {isColumnVisible("platform") && <th className="sticky top-0 z-20 bg-gray-50 px-2 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider w-[100px]">
+                <div className={`flex items-center gap-1 ${isSortActive("platform") ? "text-gray-900" : ""}`}>
+                  Platform
+                  <SortIcon column="platform" />
                 </div>
               </th>}
               {isColumnVisible("flightCompleted") && <th className="sticky top-0 z-20 bg-gray-50 px-2 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider w-[68px]">
@@ -2242,23 +1875,22 @@ export function CampaignsTable({
                   </Popover>
                 </div>
               </th>}
-              {isColumnVisible("sales") && <th className="sticky top-0 z-20 bg-gray-50 px-2 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider w-[78px]">
-                <div className={`flex items-center gap-1 ${isSortActive("sales") ? "text-gray-900" : ""}`}>
-                  <div>Sales</div>
-                  <SortIcon column="sales" />
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <button className="text-gray-400 hover:text-gray-600 transition-colors">
-                        <Info className="w-3 h-3" />
-                      </button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-56 p-3" side="top">
-                      <div className="text-xs space-y-1.5">
-                        <div className="font-semibold text-gray-900 mb-2">Sales</div>
-                        <p className="text-gray-600">Total revenue attributed to this campaign. This represents the sales value generated as a result of the campaign's ad interactions.</p>
-                      </div>
-                    </PopoverContent>
-                  </Popover>
+              {isColumnVisible("totalSales") && <th className="sticky top-0 z-20 bg-gray-50 px-2 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider w-[78px]">
+                <div className={`flex items-center gap-1 ${isSortActive("totalSales") ? "text-gray-900" : ""}`}>
+                  <div>Total<br/>Sales</div>
+                  <SortIcon column="totalSales" />
+                </div>
+              </th>}
+              {isColumnVisible("onlineSales") && <th className="sticky top-0 z-20 bg-gray-50 px-2 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider w-[78px]">
+                <div className={`flex items-center gap-1 ${isSortActive("onlineSales") ? "text-gray-900" : ""}`}>
+                  <div>Online<br/>Sales</div>
+                  <SortIcon column="onlineSales" />
+                </div>
+              </th>}
+              {isColumnVisible("offlineSales") && <th className="sticky top-0 z-20 bg-gray-50 px-2 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider w-[82px]">
+                <div className={`flex items-center gap-1 ${isSortActive("offlineSales") ? "text-gray-900" : ""}`}>
+                  <div>Offline<br/>Sales</div>
+                  <SortIcon column="offlineSales" />
                 </div>
               </th>}
               {isColumnVisible("mediaPlan") && <th className="sticky top-0 z-20 bg-gray-50 px-2 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider w-[100px]">
@@ -2280,7 +1912,7 @@ export function CampaignsTable({
                   </Popover>
                 </div>
               </th>}
-              <th className="pinned-edge-left sticky right-[108px] top-0 z-30 bg-gray-50 pl-3 pr-2 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider w-[160px] min-w-[160px]" style={{ boxShadow: '-10px 0 0 0 rgb(249,250,251)' }}>
+              {isColumnVisible("optimizations") && <th className="pinned-edge-left sticky right-[40px] top-0 z-30 bg-gray-50 pl-3 pr-2 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider w-[160px] min-w-[160px]" style={{ boxShadow: '-10px 0 0 0 rgb(249,250,251)' }}>
                 <div className="flex items-center gap-1">
                   Optimizations
                   <Popover>
@@ -2297,25 +1929,7 @@ export function CampaignsTable({
                     </PopoverContent>
                   </Popover>
                 </div>
-              </th>
-              <th className="sticky right-[40px] top-0 z-30 bg-gray-50 px-2 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider w-[68px] min-w-[68px]" style={{ boxShadow: '-1px 0 0 0 rgb(249,250,251), 1px 0 0 0 rgb(249,250,251)' }}>
-                <div className="flex items-center gap-1">
-                  Notes
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <button className="text-gray-400 hover:text-gray-600 transition-colors">
-                        <Info className="w-3 h-3" />
-                      </button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-56 p-3" side="top">
-                      <div className="text-xs space-y-1.5">
-                        <div className="font-semibold text-gray-900 mb-2">Notes</div>
-                        <p className="text-gray-600">Internal notes and comments added to this campaign by team members. Click to view, add, or manage campaign notes.</p>
-                      </div>
-                    </PopoverContent>
-                  </Popover>
-                </div>
-              </th>
+              </th>}
               <th className="sticky right-0 top-0 z-30 bg-gray-50 px-2 py-2 w-[40px] min-w-[40px]" style={{ boxShadow: '-1px 0 0 0 rgb(249,250,251), 10px 0 0 0 rgb(249,250,251)' }}>
               </th>
 
@@ -2326,7 +1940,7 @@ export function CampaignsTable({
           <tbody className="bg-gray-50">
             <tr className="bg-gray-50 border-b border-gray-200 font-semibold">
               <td
-                className="sticky left-0 z-10 bg-gray-50 pl-3 pr-1.5 py-2 text-sm text-gray-900 whitespace-nowrap"
+                className="sticky left-0 top-[33px] z-10 bg-gray-50 pl-3 pr-1.5 py-2 text-sm text-gray-900 whitespace-nowrap"
                 colSpan={1 + 1 + (isColumnVisible("id") ? 1 : 0) + (isColumnVisible("name") ? 1 : 0)}
                 style={{ boxShadow: '10px 0 0 0 rgb(249,250,251)' }}
               >
@@ -2337,16 +1951,7 @@ export function CampaignsTable({
               {isColumnVisible("destination") && <td className="px-2 py-2"></td>}
               {isColumnVisible("startDate") && <td className="px-2 py-2"></td>}
               {isColumnVisible("endDate") && <td className="px-2 py-2"></td>}
-              
-              {isColumnVisible("pacing") && (
-                <td className="px-2 py-2 text-sm text-gray-900">
-                  {displayCampaigns.length > 0 
-                    ? `${(displayCampaigns.reduce((sum, c) => sum + parseFloat(c.pacing.replace('%', '')), 0) / displayCampaigns.length).toFixed(1)}%`
-                    : '-'
-                  }
-                </td>
-              )}
-              
+
               {isColumnVisible("spend") && (
                 <td className="px-2 py-2 text-sm text-gray-900">
                   ${(displayCampaigns.reduce((sum, c) => sum + c.spend, 0) / 1000000).toFixed(0)}M
@@ -2359,27 +1964,78 @@ export function CampaignsTable({
                 </td>
               )}
               
-              {isColumnVisible("roas") && (
+              {isColumnVisible("roasTotal") && (
                 <td className="px-2 py-2 text-sm text-gray-900">
-                  {displayCampaigns.length > 0 
-                    ? `${(displayCampaigns.reduce((sum, c) => sum + parseFloat(c.roas.replace('x', '')), 0) / displayCampaigns.length).toFixed(2)}x`
-                    : '-'
-                  }
+                  {displayCampaigns.length > 0
+                    ? `${(displayCampaigns.reduce((sum, c) => sum + parseFloat((c.roasTotal ?? c.roas).replace("x", "")), 0) / displayCampaigns.length).toFixed(2)}x`
+                    : "-"}
+                </td>
+              )}
+              {isColumnVisible("roasOnline") && (
+                <td className="px-2 py-2 text-sm text-gray-900">
+                  {displayCampaigns.length > 0
+                    ? `${(displayCampaigns.reduce((sum, c) => sum + parseFloat((c.roasOnline || "0").replace("x", "")), 0) / displayCampaigns.length).toFixed(2)}x`
+                    : "-"}
+                </td>
+              )}
+              {isColumnVisible("roasOffline") && (
+                <td className="px-2 py-2 text-sm text-gray-900">
+                  {displayCampaigns.length > 0
+                    ? `${(displayCampaigns.reduce((sum, c) => sum + parseFloat((c.roasOffline || "0").replace("x", "")), 0) / displayCampaigns.length).toFixed(2)}x`
+                    : "-"}
                 </td>
               )}
               
               {isColumnVisible("ctr") && (
                 <td className="px-2 py-2 text-sm text-gray-900">
-                  {displayCampaigns.length > 0 
+                  {displayCampaigns.length > 0
                     ? `${(displayCampaigns.reduce((sum, c) => sum + parseFloat(c.ctr.replace('%', '')), 0) / displayCampaigns.length).toFixed(2)}%`
                     : '-'
                   }
                 </td>
               )}
-              
+
+              {isColumnVisible("clicks") && (
+                <td className="px-2 py-2 text-sm text-gray-900">
+                  {displayCampaigns.reduce((sum, c) => sum + (c.clicks ?? 0), 0).toLocaleString()}
+                </td>
+              )}
+              {isColumnVisible("impressions") && (
+                <td className="px-2 py-2 text-sm text-gray-900">
+                  {displayCampaigns.reduce((sum, c) => sum + (c.impressions ?? 0), 0).toLocaleString()}
+                </td>
+              )}
+
+              {isColumnVisible("pacing") && (
+                <td className="px-2 py-2 text-sm text-gray-900">
+                  {displayCampaigns.length > 0
+                    ? `${(displayCampaigns.reduce((sum, c) => sum + parseFloat(c.pacing.replace('%', '')), 0) / displayCampaigns.length).toFixed(1)}%`
+                    : '-'
+                  }
+                </td>
+              )}
+
+              {isColumnVisible("budgetAtRisk") && (
+                <td className="px-2 py-2 text-sm text-red-600">
+                  {(() => {
+                    const total = displayCampaigns.reduce((sum, c) => {
+                      const pacing = parseFloat(c.pacing);
+                      if (isNaN(pacing) || c.status === "Draft" || c.status === "Ended") return sum;
+                      const flightPct = calculateFlightCompletion(c.startDate, c.endDate) / 100;
+                      const projected = flightPct > 0 ? c.spend / flightPct : 0;
+                      const risk = projected - c.budget;
+                      return sum + (risk > 0 ? risk : 0);
+                    }, 0);
+                    return total > 0 ? `$${(total / 1000).toFixed(0)}K` : '$0';
+                  })()}
+                </td>
+              )}
+
               {isColumnVisible("lastModified") && <td className="px-2 py-2"></td>}
               {isColumnVisible("brandId") && <td className="px-2 py-2"></td>}
               {isColumnVisible("objective") && <td className="px-2 py-2"></td>}
+              {isColumnVisible("mediaChannel") && <td className="px-2 py-2"></td>}
+              {isColumnVisible("platform") && <td className="px-2 py-2"></td>}
               {isColumnVisible("flightCompleted") && <td className="px-2 py-2"></td>}
               
               {isColumnVisible("budgetSpent") && (
@@ -2397,7 +2053,8 @@ export function CampaignsTable({
                   ${((displayCampaigns.reduce((sum, c) => sum + c.budget, 0) - displayCampaigns.reduce((sum, c) => sum + c.spend, 0)) / 1000000).toFixed(0)}M
                 </td>
               )}
-              
+
+
               {isColumnVisible("cpc") && (
                 <td className="px-2 py-2 text-sm text-gray-900">
                   {displayCampaigns.filter(c => c.cpc).length > 0 
@@ -2425,24 +2082,44 @@ export function CampaignsTable({
                 </td>
               )}
               
-              {isColumnVisible("sales") && (
+              {isColumnVisible("totalSales") && (
                 <td className="px-2 py-2 text-sm text-gray-900">
-                  {displayCampaigns.filter(c => c.sales).length > 0 
-                    ? `$${(displayCampaigns.filter(c => c.sales).reduce((sum, c) => sum + parseFloat(c.sales!.replace(/[$M]/g, '')), 0)).toFixed(1)}M`
-                    : '-'
-                  }
+                  {(() => {
+                    const sum = displayCampaigns.reduce(
+                      (s, c) => s + parseNumericStr(c.totalSales ?? c.sales),
+                      0,
+                    );
+                    return sum > 0 ? `$${(sum / 1_000_000).toFixed(2)}M` : "-";
+                  })()}
+                </td>
+              )}
+              {isColumnVisible("onlineSales") && (
+                <td className="px-2 py-2 text-sm text-gray-900">
+                  {(() => {
+                    const sum = displayCampaigns.reduce((s, c) => s + parseNumericStr(c.onlineSales), 0);
+                    return sum > 0 ? `$${(sum / 1_000_000).toFixed(2)}M` : "-";
+                  })()}
+                </td>
+              )}
+              {isColumnVisible("offlineSales") && (
+                <td className="px-2 py-2 text-sm text-gray-900">
+                  {(() => {
+                    const sum = displayCampaigns.reduce((s, c) => s + parseNumericStr(c.offlineSales), 0);
+                    return sum > 0 ? `$${(sum / 1_000_000).toFixed(2)}M` : "-";
+                  })()}
                 </td>
               )}
               
               {isColumnVisible("mediaPlan") && <td className="px-2 py-2"></td>}
-              <td className="pinned-edge-left sticky right-[108px] z-10 bg-gray-50 pl-3 pr-2 py-2 w-[160px] min-w-[160px]" style={{ boxShadow: '-10px 0 0 0 rgb(249,250,251)' }}></td>
-              <td className="sticky right-[40px] z-10 bg-gray-50 px-2 py-2 w-[68px] min-w-[68px]" style={{ boxShadow: '-1px 0 0 0 rgb(249,250,251), 1px 0 0 0 rgb(249,250,251)' }}></td>
-              <td className="sticky right-0 z-10 bg-gray-50 px-2 py-2 w-[40px] min-w-[40px]" style={{ boxShadow: '-1px 0 0 0 rgb(249,250,251)' }}></td>
+              {isColumnVisible("optimizations") && <td className="pinned-edge-left sticky right-[40px] top-[33px] z-10 bg-gray-50 pl-3 pr-2 py-2 w-[160px] min-w-[160px]" style={{ boxShadow: '-10px 0 0 0 rgb(249,250,251)' }}>
+                {renderCampaignOptimizedCallout()}
+              </td>}
+              <td className="sticky right-0 top-[33px] z-10 bg-gray-50 px-2 py-2 w-[40px] min-w-[40px]" style={{ boxShadow: '-1px 0 0 0 rgb(249,250,251)' }}></td>
             </tr>
           </tbody>
           
           <tbody className="divide-y divide-gray-200">
-            {paginatedCampaigns.map((campaign) => renderCampaignRow(campaign, false))}
+            {paginatedCampaigns.map((campaign) => renderCampaignRow(campaign))}
           </tbody>
         </table>
 
@@ -2466,7 +2143,20 @@ export function CampaignsTable({
       </div>
 
       {/* Pagination Controls — frozen outside scroll container */}
-      <div className="flex items-center justify-end px-4 py-3 bg-gray-50 border-t border-gray-200 shrink-0">
+      <div className="flex items-center justify-between gap-4 px-4 py-3 bg-gray-50 border-t border-gray-200 shrink-0">
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-gray-600 whitespace-nowrap">Rows per page</span>
+          <Select value={rowsPerPageDisplay} onValueChange={setRowsPerPageDisplay}>
+            <SelectTrigger size="sm" className="w-[4.5rem] h-8 bg-white border-gray-300 text-gray-800">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="10">10</SelectItem>
+              <SelectItem value="25">25</SelectItem>
+              <SelectItem value="50">50</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
@@ -2502,34 +2192,153 @@ export function CampaignsTable({
         }}
       />
 
-      {/* Notes Drawer */}
-      {selectedCampaignForNotes && (
-        <NotesDrawer
-          isOpen={notesDrawerOpen}
-          onClose={() => {
-            setNotesDrawerOpen(false);
-            setSelectedCampaignForNotes(null);
-          }}
-          campaignId={selectedCampaignForNotes}
-          campaignName={campaigns.find(c => c.id === selectedCampaignForNotes)?.name || ""}
-          notes={campaignNotes[selectedCampaignForNotes] || []}
-          onAddNote={(noteData) => handleAddNote(selectedCampaignForNotes, noteData)}
-        />
-      )}
+      {/* Edit End Date Dialog */}
+      <Dialog open={editDialogOpen?.field === "endDate"} onOpenChange={(open) => { if (!open) { setEditDialogOpen(null); setEditNote(""); setShowEditNote(false); } }}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Edit End Date</DialogTitle>
+            <DialogDescription>
+              Current end date: {editDialogOpen ? campaigns.find(c => c.id === editDialogOpen.campaignId)?.endDate : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">New End Date</label>
+              <input
+                type="date"
+                value={editValue}
+                onChange={(e) => setEditValue(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#f26318]/30 focus:border-[#f26318]"
+              />
+            </div>
+            {!showEditNote ? (
+              <button
+                type="button"
+                onClick={() => setShowEditNote(true)}
+                className="inline-flex items-center gap-1.5 text-sm text-[#f26318] hover:text-[#d9550f] font-medium transition-colors"
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+                Leave a note
+              </button>
+            ) : (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Note</label>
+                <textarea
+                  value={editNote}
+                  onChange={(e) => setEditNote(e.target.value)}
+                  className="w-full min-h-[80px] px-3 py-2 border border-gray-300 rounded-md text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#f26318]/30 focus:border-[#f26318] resize-y"
+                  placeholder="Why are you changing this end date?"
+                  autoFocus
+                />
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setEditDialogOpen(null); setEditNote(""); setShowEditNote(false); }}>
+              Cancel
+            </Button>
+            <Button
+              className="bg-[#f26318] hover:bg-[#d9550f] text-white"
+              onClick={() => {
+                if (editValue && onUpdateCampaign && editDialogOpen) {
+                  const d = new Date(editValue + "T00:00:00");
+                  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+                  const formatted = `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+                  onUpdateCampaign(editDialogOpen.campaignId, { endDate: formatted });
+                  toast.success(`End date updated to ${formatted}${editNote ? " (note saved)" : ""}`);
+                }
+                setEditDialogOpen(null);
+                setEditNote("");
+                setShowEditNote(false);
+              }}
+            >
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-      {/* Optimize Drawer */}
-      {selectedCampaignForOptimize && (
-        <OptimizeDrawer
-          isOpen={optimizeDrawerOpen}
-          onClose={() => {
-            setOptimizeDrawerOpen(false);
-            setSelectedCampaignForOptimize(null);
-          }}
-          campaign={campaigns.find(c => c.id === selectedCampaignForOptimize)!}
-        />
-      )}
-
-      {/* AI Summary Dialog - hidden */}
+      {/* Edit Budget Dialog */}
+      <Dialog open={editDialogOpen?.field === "budget"} onOpenChange={(open) => { if (!open) { setEditDialogOpen(null); setEditNote(""); setShowEditNote(false); } }}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Edit Budget</DialogTitle>
+            <DialogDescription>
+              Current budget: ${editDialogOpen ? campaigns.find(c => c.id === editDialogOpen.campaignId)?.budget.toLocaleString() : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Amount</label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500">$</span>
+                <input
+                  type="number"
+                  value={editValue}
+                  onChange={(e) => setEditValue(e.target.value)}
+                  min={0}
+                  step={100}
+                  className="w-full pl-7 pr-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#f26318]/30 focus:border-[#f26318]"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Budget Frequency</label>
+              <select
+                value={editBudgetFrequency}
+                onChange={(e) => setEditBudgetFrequency(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#f26318]/30 focus:border-[#f26318] cursor-pointer"
+              >
+                <option value="Daily">Daily</option>
+                <option value="Weekly">Weekly</option>
+                <option value="Monthly">Monthly</option>
+                <option value="Lifetime">Lifetime</option>
+              </select>
+            </div>
+            {!showEditNote ? (
+              <button
+                type="button"
+                onClick={() => setShowEditNote(true)}
+                className="inline-flex items-center gap-1.5 text-sm text-[#f26318] hover:text-[#d9550f] font-medium transition-colors"
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+                Leave a note
+              </button>
+            ) : (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Note</label>
+                <textarea
+                  value={editNote}
+                  onChange={(e) => setEditNote(e.target.value)}
+                  className="w-full min-h-[80px] px-3 py-2 border border-gray-300 rounded-md text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#f26318]/30 focus:border-[#f26318] resize-y"
+                  placeholder="Why are you changing this budget?"
+                  autoFocus
+                />
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setEditDialogOpen(null); setEditNote(""); setShowEditNote(false); }}>
+              Cancel
+            </Button>
+            <Button
+              className="bg-[#f26318] hover:bg-[#d9550f] text-white"
+              onClick={() => {
+                const num = parseFloat(editValue);
+                if (!isNaN(num) && num >= 0 && onUpdateCampaign && editDialogOpen) {
+                  onUpdateCampaign(editDialogOpen.campaignId, { budget: num });
+                  toast.success(`Budget updated to $${num.toLocaleString()} (${editBudgetFrequency})${editNote ? " (note saved)" : ""}`);
+                }
+                setEditDialogOpen(null);
+                setEditNote("");
+                setShowEditNote(false);
+              }}
+            >
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={!!pauseConfirmCampaign} onOpenChange={(open) => { if (!open) { setPauseConfirmCampaign(null); setPauseNote(""); } }}>
         <AlertDialogContent>

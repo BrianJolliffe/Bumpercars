@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
-import { Bell, Search, Filter, X, ChevronDown, Plus, Settings, SlidersHorizontal, MoreHorizontal, Pencil, Trash2, GripVertical } from "lucide-react";
+import { Search, Filter, X, ChevronDown, Plus, Settings, SlidersHorizontal, MoreHorizontal, Pencil, Trash2, GripVertical } from "lucide-react";
 import dewaltLogo from "figma:asset/c83d6fbce686d39b965bc80ee00d9d9f4682c202.png";
 import orangeAccessLogo from "figma:asset/d08116febc01d4a3e0d1507492e9a1206eb7ca8b.png";
 import { CampaignsTable, Campaign } from "@/app/components/CampaignsTable";
@@ -14,13 +14,52 @@ import { DateRangePicker } from "@/app/components/DateRangePicker";
 import { ExportSelector } from "@/app/components/ExportSelector";
 import { FilterCustomizer, FilterRule } from "@/app/components/FilterCustomizer";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator } from "@/app/components/ui/dropdown-menu";
-import { CriticalCampaignsDrawer } from "@/app/components/CriticalCampaignsDrawer";
 import { Toaster } from "@/app/components/ui/sonner";
-import { CampaignSummaryCards } from "@/app/components/CampaignSummaryCards";
 import { ViewEditorDrawer } from "@/app/components/ViewEditorDrawer";
 import { FieldsDrawer } from "@/app/components/FieldsDrawer";
-import { LoginGate } from "@/app/components/LoginGate";
-import { Switch } from "@/app/components/ui/switch";
+
+const QUICK_OFFSITE_AD_TYPE_LABELS = [
+  "Google Search",
+  "Google PMAX",
+  "Pinterest Shopping",
+  "Pinterest Static Pins",
+  "Meta",
+] as const;
+
+function getOffsiteQuickAdType(campaign: Campaign): string | null {
+  if ((campaign.mediaChannel || "") !== "Offsite") return null;
+  const idNum = parseInt(String(campaign.id).replace(/\D/g, ""), 10) || 0;
+  switch (campaign.platform) {
+    case "Meta":
+      return "Meta";
+    case "Google PMAX":
+      return "Google PMAX";
+    case "Google Search":
+      return "Google Search";
+    case "Pinterest":
+      return idNum % 2 === 0 ? "Pinterest Shopping" : "Pinterest Static Pins";
+    default:
+      return null;
+  }
+}
+
+const QUICK_PLATFORM_OPTIONS = ["On-Site", "Google", "Meta", "Pinterest"] as const;
+
+function matchesPlatformQuickFilter(campaign: Campaign, selections: string[]): boolean {
+  if (selections.length === 0) return true;
+  const isOnsite = (campaign.mediaChannel || "") === "Onsite";
+  const plat = campaign.platform || "";
+  const platIsGoogle = plat === "Google Search" || plat === "Google PMAX";
+  const platIsMeta = plat === "Meta";
+  const platIsPinterest = plat === "Pinterest";
+  return selections.some(s => {
+    if (s === "On-Site") return isOnsite;
+    if (s === "Google") return platIsGoogle;
+    if (s === "Meta") return platIsMeta;
+    if (s === "Pinterest") return platIsPinterest;
+    return false;
+  });
+}
 
 interface Column {
   id: string;
@@ -36,7 +75,6 @@ function App() {
   const [customViews, setCustomViews] = useState<string[]>([]);
   const [activeViewFilter, setActiveViewFilter] = useState("running");
   const [starredCampaignIds, setStarredCampaignIds] = useState<Set<string>>(new Set());
-  const [showDemoNames, setShowDemoNames] = useState(false);
 
   const [showCreateViewDrawer, setShowCreateViewDrawer] = useState(false);
   const [newViewName, setNewViewName] = useState("");
@@ -49,36 +87,26 @@ function App() {
   const [showColumnDrawer, setShowColumnDrawer] = useState(false);
   const [tempFilters, setTempFilters] = useState<FilterRule[]>([]);
   const [appliedFilters, setAppliedFilters] = useState<FilterRule[]>([]);
+  const [multiTextInputValue, setMultiTextInputValue] = useState("");
   // Quick filter state
   const [showQuickFilter, setShowQuickFilter] = useState(false);
   const [quickFilterStatus, setQuickFilterStatus] = useState<string[]>([]);
-  const [quickFilterTargeting, setQuickFilterTargeting] = useState<string[]>([]);
   const [quickFilterObjective, setQuickFilterObjective] = useState<string[]>([]);
   const [quickFilterAdTypes, setQuickFilterAdTypes] = useState<string[]>([]);
   const [quickFilterMediaPlan, setQuickFilterMediaPlan] = useState<string[]>([]);
+  const [quickFilterPlatform, setQuickFilterPlatform] = useState<string[]>([]);
 
-
-  const [showSaveViewDialog, setShowSaveViewDialog] = useState(false);
+  const [qfOpenStatus, setQfOpenStatus] = useState(false);
+  const [qfOpenAdTypes, setQfOpenAdTypes] = useState(false);
+  const [qfOpenPlatform, setQfOpenPlatform] = useState(false);
+  const [qfOpenObjective, setQfOpenObjective] = useState(false);  const [showSaveViewDialog, setShowSaveViewDialog] = useState(false);
   const [saveViewName, setSaveViewName] = useState("");
-  const [showCriticalDrawer, setShowCriticalDrawer] = useState(false);
-  const [showAllIssuesDrawer, setShowAllIssuesDrawer] = useState(false);
-  
+
   // Tab order state - default tabs + custom views
-  const [tabOrder, setTabOrder] = useState<string[]>(["running", "attention", "draft"]);
+  const [tabOrder, setTabOrder] = useState<string[]>(["running", "attention", "draft", "ending7d"]);
   const [defaultViewId, setDefaultViewId] = useState<string>("running");
 
-  // Dynamically add/remove watchlist tab when starred campaigns change
-  useEffect(() => {
-    if (starredCampaignIds.size > 0 && !tabOrder.includes("watchlist")) {
-      setTabOrder(prev => [...prev, "watchlist"]);
-    } else if (starredCampaignIds.size === 0 && tabOrder.includes("watchlist")) {
-      setTabOrder(prev => prev.filter(t => t !== "watchlist"));
-      if (activeViewFilter === "watchlist") {
-        setActiveViewFilter("running");
-      }
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [starredCampaignIds]);
+  // Watchlist tab removed — starred campaigns now pin to top of current view
 
   // Create View drawer - filter management
   const [viewFilterRows, setViewFilterRows] = useState<FilterRule[]>([]);
@@ -92,8 +120,8 @@ function App() {
   
   // Default visible columns
   const defaultVisibleColumns = [
-    "name", "id", "status", "destination", "startDate", "endDate", "pacing", 
-    "spend", "budget", "roas", "ctr", "lastModified"
+    "name", "id", "status", "destination", "startDate", "endDate", "pacing",
+    "spend", "budget", "roasTotal", "ctr", "optimizations",
   ];
   
   const [visibleColumns, setVisibleColumns] = useState<string[]>(defaultVisibleColumns);
@@ -112,8 +140,8 @@ function App() {
   const [initialSortDirection, setInitialSortDirection] = useState<"asc" | "desc">("desc");
   const [initialDateRange, setInitialDateRange] = useState<string>(dateRange);
   const [initialQuickFilters, setInitialQuickFilters] = useState<{
-    status: string[]; targeting: string[]; objective: string[]; adTypes: string[]; mediaPlan: string[];
-  }>({ status: [], targeting: [], objective: [], adTypes: [], mediaPlan: [] });
+    status: string[]; objective: string[]; adTypes: string[]; mediaPlan: string[]; platform: string[];
+  }>({ status: [], objective: [], adTypes: [], mediaPlan: [], platform: [] });
 
   // Store view-specific configurations
   const [viewConfigurations, setViewConfigurations] = useState<Record<string, {
@@ -123,45 +151,48 @@ function App() {
     sortDirection?: "asc" | "desc";
     quickFilters?: {
       status?: string[];
-      targeting?: string[];
       objective?: string[];
       adTypes?: string[];
       mediaPlan?: string[];
+      platform?: string[];
     };
   }>>({
     "running": {
       filters: [],
       quickFilters: {},
-      columns: ["name", "id", "status", "destination", "startDate", "endDate", "pacing", "spend", "budget", "roas", "ctr", "lastModified"]
+      columns: ["name", "id", "status", "destination", "startDate", "endDate", "pacing", "spend", "budget", "roasTotal", "ctr", "optimizations"],
     },
     "draft": {
       filters: [],
       quickFilters: { status: ["Draft"] },
-      columns: ["name", "id", "status", "destination", "startDate", "endDate", "budget", "lastModified"]
+      columns: ["name", "id", "status", "destination", "startDate", "endDate", "budget"]
     },
     "ending7d": {
       filters: [
         { id: "filter-endDate-ending7d", field: "endDate", operator: "is on or before", values: [(() => { const d = new Date(); d.setDate(d.getDate() + 7); return d.toISOString().split("T")[0]; })()] }
       ],
       quickFilters: { status: ["Running", "Paused"] },
-      columns: ["name", "id", "status", "destination", "startDate", "endDate", "pacing", "spend", "budget", "roas", "ctr", "lastModified"]
+      columns: ["name", "id", "status", "destination", "startDate", "endDate", "pacing", "spend", "budget", "roasTotal", "ctr", "optimizations"],
     },
     "attention": {
       filters: [
-        { id: "filter-pacing-attention", field: "pacing", operator: "less than", values: ["Under 80%"] },
-        { id: "filter-roas-attention", field: "roas", operator: "less than", values: ["Less than 1.5"] },
-        { id: "filter-ctr-attention", field: "ctr", operator: "less than", values: ["Less than 0.3%"] }
+        { id: "filter-pacing-attention", field: "pacing", operator: "less than", values: ["Under 90%"] },
+        { id: "filter-roas-attention", field: "roasTotal", operator: "less than", values: ["Less than 2.0"] },
+        { id: "filter-ctr-attention", field: "ctr", operator: "less than", values: ["Less than 1.0%"] },
       ],
       quickFilters: { status: ["Running", "Paused"] },
-      columns: ["name", "id", "status", "destination", "startDate", "endDate", "pacing", "spend", "budget", "roas", "ctr", "lastModified"]
+      columns: ["id", "name", "status", "destination", "startDate", "endDate", "spend", "budget", "roasTotal", "ctr", "pacing", "budgetAtRisk", "optimizations"],
     },
-    "watchlist": {
-      filters: [],
-      columns: ["name", "id", "status", "destination", "startDate", "endDate", "pacing", "spend", "budget", "roas", "ctr", "lastModified"]
-    }
   });
 
-  const statusOptions = ["Draft", "On Hold", "Running", "Rejected", "Ended", "Paused", "Scheduled"];
+  const statusOptions = [
+    "Running", "Draft", "Scheduled", "Ended", "On Hold", "Rejected", "Paused",
+    "Paused by a user", "Paused by system",
+    "Awaiting Verification", "Awaiting Verification by Retailer",
+    "Awaiting Verification by Vantage", "Awaiting Verification by Ad Platforms",
+    "Awaiting Retailer Approval", "Awaiting Brand Approval",
+    "Awaiting Audience", "Awaiting Tracking Setup", "Awaiting External Approval",
+  ];
 
   // Restore view configuration when switching views
   useEffect(() => {
@@ -183,16 +214,16 @@ function App() {
       setSelectedStatuses(qf.status && qf.status.length > 0 ? [...qf.status] : []);
       // Sync quick filters from view config
       const qs = qf.status || [];
-      const qt = qf.targeting || [];
       const qo = qf.objective || [];
       const qa = qf.adTypes || [];
       const qm = qf.mediaPlan || [];
+      const qp = qf.platform || [];
       setQuickFilterStatus(qs);
-      setQuickFilterTargeting(qt);
       setQuickFilterObjective(qo);
       setQuickFilterAdTypes(qa);
       setQuickFilterMediaPlan(qm);
-      setInitialQuickFilters({ status: qs, targeting: qt, objective: qo, adTypes: qa, mediaPlan: qm });
+      setQuickFilterPlatform(qp);
+      setInitialQuickFilters({ status: qs, objective: qo, adTypes: qa, mediaPlan: qm, platform: qp });
     } else {
       // No config for this view — default sort
       setSortColumn("lastModified");
@@ -202,11 +233,11 @@ function App() {
       setSelectedStatuses([]);
       // Clear quick filters
       setQuickFilterStatus([]);
-      setQuickFilterTargeting([]);
       setQuickFilterObjective([]);
       setQuickFilterAdTypes([]);
       setQuickFilterMediaPlan([]);
-      setInitialQuickFilters({ status: [], targeting: [], objective: [], adTypes: [], mediaPlan: [] });
+      setQuickFilterPlatform([]);
+      setInitialQuickFilters({ status: [], objective: [], adTypes: [], mediaPlan: [], platform: [] });
     }
     setInitialDateRange(dateRange);
     setHasUnsavedChanges(false);
@@ -221,12 +252,12 @@ function App() {
     const dateChanged = dateRange !== initialDateRange;
     const qfChanged =
       JSON.stringify(quickFilterStatus) !== JSON.stringify(initialQuickFilters.status) ||
-      JSON.stringify(quickFilterTargeting) !== JSON.stringify(initialQuickFilters.targeting) ||
       JSON.stringify(quickFilterObjective) !== JSON.stringify(initialQuickFilters.objective) ||
       JSON.stringify(quickFilterAdTypes) !== JSON.stringify(initialQuickFilters.adTypes) ||
-      JSON.stringify(quickFilterMediaPlan) !== JSON.stringify(initialQuickFilters.mediaPlan);
+      JSON.stringify(quickFilterMediaPlan) !== JSON.stringify(initialQuickFilters.mediaPlan) ||
+      JSON.stringify(quickFilterPlatform) !== JSON.stringify(initialQuickFilters.platform);
     setHasUnsavedChanges(filtersChanged || columnsChanged || sortChanged || dateChanged || qfChanged);
-  }, [appliedFilters, visibleColumns, initialFilters, initialVisibleColumns, sortColumn, sortDirection, initialSortColumn, initialSortDirection, dateRange, initialDateRange, quickFilterStatus, quickFilterTargeting, quickFilterObjective, quickFilterAdTypes, quickFilterMediaPlan, initialQuickFilters]);
+  }, [appliedFilters, visibleColumns, initialFilters, initialVisibleColumns, sortColumn, sortDirection, initialSortColumn, initialSortDirection, dateRange, initialDateRange, quickFilterStatus, quickFilterObjective, quickFilterAdTypes, quickFilterMediaPlan, quickFilterPlatform, initialQuickFilters]);
 
   const toggleStatus = (status: string) => {
     if (selectedStatuses.includes(status)) {
@@ -239,99 +270,128 @@ function App() {
   // Filter helper functions for Create View drawer
   const filterFieldLabels: Record<string, string> = {
     // Campaign Setup
-    name: "Name",
     id: "ID",
+    name: "Name",
     status: "Status",
+    destination: "Ad Type",
     objective: "Objective",
-    adTypes: "Ad Types",
+    mediaChannel: "Media Channel",
+    platform: "Platform",
     startDate: "Start Date",
     endDate: "End Date",
     mediaPlan: "Media Plan",
+    brandId: "Brand ID",
     lastModified: "Last Modified",
-    mediaChannel: "Media Channel",
-    targeting: "Targeting",
-    // Budget & Pacing
-    flightCompleted: "% Flight Completed",
+    // Within Budget & Pacing
     pacing: "Pacing",
     budget: "Budget",
     spend: "Spend",
     budgetSpent: "% Budget Spent",
     remainingBudget: "Remaining Budget",
+    flightCompleted: "% Flight Completed",
+    budgetAtRisk: "Budget at Risk",
     // Performance
+    totalSales: "Total Sales",
+    onlineSales: "Online Sales",
+    offlineSales: "Offline Sales",
+    roasTotal: "Total ROAS",
+    roasOnline: "Online ROAS",
+    roasOffline: "Offline ROAS",
+    clicks: "Clicks",
+    impressions: "Impressions",
     ctr: "CTR",
     cpc: "CPC",
     cpm: "CPM",
     conversionRate: "Conversion Rate",
-    sales: "Sales",
-    roas: "ROAS",
   };
 
   const fieldOperators: Record<string, string[]> = {
     // Text fields
-    name: ["is", "is not"],
-    id: ["is", "is not"],
-    mediaPlan: ["is", "is not"],
+    id: ["equals", "contains", "does not contain"],
+    name: ["equals", "contains", "does not contain"],
+    mediaPlan: ["equals", "contains", "does not contain"],
+    brandId: ["is any of", "is none of"],
     // Dropdown/status fields
-    status: ["is", "is not"],
-    objective: ["is", "is not"],
-    adTypes: ["is", "is not"],
-    mediaChannel: ["is", "is not"],
-    targeting: ["contains", "does not contain"],
+    status: ["equals", "contains", "does not contain"],
+    destination: ["equals", "contains", "does not contain"],
+    objective: ["equals", "contains", "does not contain"],
+    mediaChannel: ["equals", "contains", "does not contain"],
+    platform: ["equals", "contains", "does not contain"],
     // Date fields
     startDate: ["is on", "is on or before", "is on or after"],
     endDate: ["is on", "is on or before", "is on or after"],
     lastModified: ["is on", "is on or before", "is on or after"],
     // Numeric fields
-    flightCompleted: ["is greater than", "is less than", "is equal to"],
-    budget: ["is greater than", "is less than", "is equal to"],
-    spend: ["is greater than", "is less than", "is equal to"],
-    budgetSpent: ["is greater than", "is less than", "is equal to"],
-    remainingBudget: ["is greater than", "is less than", "is equal to"],
-    ctr: ["is greater than", "is less than", "is equal to"],
-    cpc: ["is greater than", "is less than", "is equal to"],
-    cpm: ["is greater than", "is less than", "is equal to"],
-    conversionRate: ["is greater than", "is less than", "is equal to"],
-    sales: ["is greater than", "is less than", "is equal to"],
-    roas: ["is greater than", "is less than", "is equal to"],
-    // Pacing can be both dropdown and numeric
-    pacing: ["is", "is not", "is greater than", "is less than"],
+    pacing: ["is greater than", "is less than", "is between"],
+    budget: ["is greater than", "is less than", "is between"],
+    spend: ["is greater than", "is less than", "is between"],
+    budgetSpent: ["is greater than", "is less than", "is between"],
+    remainingBudget: ["is greater than", "is less than", "is between"],
+    flightCompleted: ["is greater than", "is less than", "is between"],
+    budgetAtRisk: ["is greater than", "is less than", "is between"],
+    totalSales: ["is greater than", "is less than", "is between"],
+    onlineSales: ["is greater than", "is less than", "is between"],
+    offlineSales: ["is greater than", "is less than", "is between"],
+    roasTotal: ["is greater than", "is less than", "is between"],
+    roasOnline: ["is greater than", "is less than", "is between"],
+    roasOffline: ["is greater than", "is less than", "is between"],
+    clicks: ["is greater than", "is less than", "is between"],
+    impressions: ["is greater than", "is less than", "is between"],
+    ctr: ["is greater than", "is less than", "is between"],
+    cpc: ["is greater than", "is less than", "is between"],
+    cpm: ["is greater than", "is less than", "is between"],
+    conversionRate: ["is greater than", "is less than", "is between"],
   };
 
-  type InputType = "text" | "dropdown" | "date";
+  type InputType = "text" | "dropdown" | "date" | "multi-text";
 
   const fieldInputTypes: Record<string, InputType> = {
-    name: "text",
     id: "text",
-    mediaPlan: "text",
+    name: "text",
     status: "dropdown",
+    destination: "dropdown",
     objective: "dropdown",
-    adTypes: "dropdown",
     mediaChannel: "dropdown",
-    targeting: "dropdown",
-    pacing: "dropdown",
-    // Date fields use date picker
+    platform: "dropdown",
     startDate: "date",
     endDate: "date",
+    mediaPlan: "text",
+    brandId: "multi-text",
     lastModified: "date",
-    flightCompleted: "text",
+    pacing: "dropdown",
     budget: "text",
     spend: "text",
     budgetSpent: "text",
     remainingBudget: "text",
+    flightCompleted: "text",
+    budgetAtRisk: "text",
+    totalSales: "text",
+    onlineSales: "text",
+    offlineSales: "text",
+    roasTotal: "text",
+    roasOnline: "text",
+    roasOffline: "text",
+    clicks: "text",
+    impressions: "text",
     ctr: "text",
     cpc: "text",
     cpm: "text",
     conversionRate: "text",
-    sales: "text",
-    roas: "text",
   };
 
   const filterOptions: Record<string, string[]> = {
-    status: ["Draft", "On Hold", "Running", "Rejected", "Ended"],
+    status: [
+      "Running", "Draft", "Scheduled", "Ended", "On Hold", "Rejected", "Paused",
+      "Paused by a user", "Paused by system",
+      "Awaiting Verification", "Awaiting Verification by Retailer",
+      "Awaiting Verification by Vantage", "Awaiting Verification by Ad Platforms",
+      "Awaiting Retailer Approval", "Awaiting Brand Approval",
+      "Awaiting Audience", "Awaiting Tracking Setup", "Awaiting External Approval",
+    ],
+    destination: ["Product Listing Ads", "Auction Banner", "Google Search", "Google PMAX", "Pinterest Shopping", "Pinterest Static Pins", "Meta"],
     objective: ["Awareness", "Consideration", "Conversion"],
-    adTypes: ["In Grid", "Carousel", "Banner", "Premium Banner"],
     mediaChannel: ["Onsite", "Offsite"],
-    targeting: ["Geotargeting", "Keyword Targeting"],
+    platform: ["Meta", "Google Search", "Google PMAX", "Pinterest"],
     pacing: ["Under-pacing (<80%)", "On track (80% - 100%)", "Over-pacing (>100%)"],
   };
 
@@ -340,7 +400,7 @@ function App() {
     setTempFilters([...tempFilters, {
       id: `filter-${Date.now()}`,
       field: "",
-      operator: "Equal to",
+      operator: "equals",
       values: [],
     }]);
   };
@@ -382,6 +442,26 @@ function App() {
     ));
   };
 
+  const addTempMultiTextValues = (id: string, raw: string) => {
+    const parsed = raw
+      .split(/[,\n\r;]+/)
+      .map(v => v.trim())
+      .filter(Boolean);
+    if (parsed.length === 0) return;
+    setTempFilters(tempFilters.map(f => {
+      if (f.id !== id) return f;
+      const merged = [...new Set([...f.values, ...parsed])];
+      return { ...f, values: merged };
+    }));
+  };
+
+  const removeTempMultiTextValue = (id: string, value: string) => {
+    setTempFilters(tempFilters.map(f => {
+      if (f.id !== id) return f;
+      return { ...f, values: f.values.filter(v => v !== value) };
+    }));
+  };
+
   const updateTempFilterValues = (id: string, values: string[]) => {
     setTempFilters(tempFilters.map(f => 
       f.id === id ? { ...f, values } : f
@@ -403,19 +483,19 @@ function App() {
 
   // Quick filter options
   const quickFilterStatusOptions = [
-    "Draft", "Scheduled", "On Hold", "Running", "Rejected", "Ended", "Paused",
+    "Running", "Draft", "Scheduled", "Ended", "On Hold", "Rejected", "Paused",
+    "Paused by a user", "Paused by system",
   ];
   const quickFilterAwaitingOptions = [
-    "Awaiting Verification by Retailer", "Awaiting Audience",
-    "Awaiting Verification", "Awaiting Verification by Ad Platforms",
-  ];
-  const quickFilterTargetingOptions = [
-    "Geotargeting", "Keyword Bid Multiplier", "Audience Bid Multiplier",
+    "Awaiting Verification", "Awaiting Verification by Retailer",
+    "Awaiting Verification by Vantage", "Awaiting Verification by Ad Platforms",
+    "Awaiting Retailer Approval", "Awaiting Brand Approval",
+    "Awaiting Audience", "Awaiting Tracking Setup", "Awaiting External Approval",
   ];
   const quickFilterObjectiveOptions = ["Consideration", "Conversion", "Awareness"];
   const quickFilterAdTypesOnsite = ["Product Listing Ads", "Auction Banner"];
-  const quickFilterAdTypesOffsite = ["Meta", "Google", "Pinterest"];
-  const allQuickAdTypeOptions = [...quickFilterAdTypesOnsite, ...quickFilterAdTypesOffsite];
+  const quickFilterAdTypesOffsite = [...QUICK_OFFSITE_AD_TYPE_LABELS];
+  const quickFilterPlatformOptions = [...QUICK_PLATFORM_OPTIONS];
 
   const toggleQuickValue = (
     current: string[],
@@ -442,11 +522,11 @@ function App() {
   };
 
   const quickFilterActiveCount =
-    quickFilterStatus.length + quickFilterTargeting.length +
+    quickFilterStatus.length +
     quickFilterObjective.length + quickFilterAdTypes.length +
-    quickFilterMediaPlan.length;
+    quickFilterMediaPlan.length + quickFilterPlatform.length;
 
-  const quickFilterFieldNames = ["status", "targeting", "objective", "adTypes", "mediaPlan"];
+  const quickFilterFieldNames = ["status", "objective", "adTypes", "mediaPlan", "platform"];
   const advancedFilterActiveCount = appliedFilters.filter(
     f => f.field && f.values && f.values.length > 0 && !quickFilterFieldNames.includes(f.field)
   ).length;
@@ -455,10 +535,10 @@ function App() {
 
   const clearAllQuickFilters = () => {
     setQuickFilterStatus([]);
-    setQuickFilterTargeting([]);
     setQuickFilterObjective([]);
     setQuickFilterAdTypes([]);
     setQuickFilterMediaPlan([]);
+    setQuickFilterPlatform([]);
   };
 
   const handleSaveCurrentView = () => {
@@ -480,10 +560,10 @@ function App() {
         sortDirection,
         quickFilters: {
           status: quickFilterStatus.length > 0 ? [...quickFilterStatus] : undefined,
-          targeting: quickFilterTargeting.length > 0 ? [...quickFilterTargeting] : undefined,
           objective: quickFilterObjective.length > 0 ? [...quickFilterObjective] : undefined,
           adTypes: quickFilterAdTypes.length > 0 ? [...quickFilterAdTypes] : undefined,
           mediaPlan: quickFilterMediaPlan.length > 0 ? [...quickFilterMediaPlan] : undefined,
+          platform: quickFilterPlatform.length > 0 ? [...quickFilterPlatform] : undefined,
         },
       }
     }));
@@ -501,24 +581,34 @@ function App() {
     { id: "id", label: "ID", category: "Campaign Setup" },
     { id: "name", label: "Name", category: "Campaign Setup" },
     { id: "status", label: "Status", category: "Campaign Setup" },
-    { id: "destination", label: "Destination", category: "Campaign Setup" },
+    { id: "destination", label: "Ad Type", category: "Campaign Setup" },
+    { id: "objective", label: "Objective", category: "Campaign Setup" },
+    { id: "mediaChannel", label: "Media Channel", category: "Campaign Setup" },
+    { id: "platform", label: "Platform", category: "Campaign Setup" },
     { id: "startDate", label: "Start Date", category: "Campaign Setup" },
     { id: "endDate", label: "End Date", category: "Campaign Setup" },
-    { id: "flightCompleted", label: "% Flight Completed", category: "Campaign Setup" },
-    { id: "budget", label: "Budget", category: "Campaign Setup" },
-    { id: "spend", label: "Spend", category: "Campaign Setup" },
-    { id: "budgetSpent", label: "% Budget Spent", category: "Campaign Setup" },
-    { id: "remainingBudget", label: "Remaining Budget", category: "Campaign Setup" },
-    { id: "pacing", label: "Pacing", category: "Performance" },
+    { id: "mediaPlan", label: "Media Plan", category: "Campaign Setup" },
+    { id: "brandId", label: "Brand ID", category: "Campaign Setup" },
+    { id: "lastModified", label: "Last Modified", category: "Campaign Setup" },
+    { id: "pacing", label: "Pacing", category: "Within Budget & Pacing" },
+    { id: "budget", label: "Budget", category: "Within Budget & Pacing" },
+    { id: "spend", label: "Spend", category: "Within Budget & Pacing" },
+    { id: "budgetSpent", label: "% Budget Spent", category: "Within Budget & Pacing" },
+    { id: "remainingBudget", label: "Remaining Budget", category: "Within Budget & Pacing" },
+    { id: "flightCompleted", label: "% Flight Completed", category: "Within Budget & Pacing" },
+    { id: "budgetAtRisk", label: "Budget at Risk", category: "Within Budget & Pacing" },
+    { id: "totalSales", label: "Total Sales", category: "Performance" },
+    { id: "onlineSales", label: "Online Sales", category: "Performance" },
+    { id: "offlineSales", label: "Offline Sales", category: "Performance" },
+    { id: "roasTotal", label: "Total ROAS", category: "Performance" },
+    { id: "roasOnline", label: "Online ROAS", category: "Performance" },
+    { id: "roasOffline", label: "Offline ROAS", category: "Performance" },
+    { id: "clicks", label: "Clicks", category: "Performance" },
+    { id: "impressions", label: "Impressions", category: "Performance" },
     { id: "ctr", label: "CTR", category: "Performance" },
     { id: "cpc", label: "CPC", category: "Performance" },
     { id: "cpm", label: "CPM", category: "Performance" },
     { id: "conversionRate", label: "Conversion Rate", category: "Performance" },
-    { id: "sales", label: "Sales", category: "Performance" },
-    { id: "roas", label: "ROAS", category: "Performance" },
-    { id: "mediaPlan", label: "Media Plan", category: "Campaign Setup" },
-    { id: "brandId", label: "Brand ID", category: "Campaign Setup" },
-    { id: "lastModified", label: "Last Modified", category: "Campaign Setup" },
   ];
 
   const [campaigns, setCampaigns] = useState<Campaign[]>([
@@ -1489,7 +1579,7 @@ function App() {
     },
   ]);
 
-  // Enrich campaigns with filter-related fields (adTypes, mediaChannel, targeting, normalised objective)
+  // Enrich campaigns with filter-related fields (adTypes, mediaChannel, normalised objective)
   const enrichCampaign = (c: Campaign): Campaign => {
     const idNum = parseInt(c.id);
 
@@ -1503,17 +1593,6 @@ function App() {
         ? (idNum % 5 === 0 ? "Offsite" : "Onsite")
         : (idNum % 6 === 0 ? "Onsite" : "Offsite")
     );
-
-    // Targeting: mix of Geotargeting, Keyword Targeting, or both
-    const targetingPool: string[][] = [
-      ["Geotargeting"],
-      ["Keyword Targeting"],
-      ["Geotargeting", "Keyword Targeting"],
-      ["Keyword Targeting"],
-      ["Geotargeting"],
-      ["Geotargeting", "Keyword Targeting"],
-    ];
-    const targeting = c.targeting || targetingPool[idNum % 6];
 
     // Normalise objective to filter-friendly values: Awareness | Consideration | Conversion
     // Explicit overrides for Consideration (otherwise no campaigns get it)
@@ -1529,7 +1608,37 @@ function App() {
       else if (objective === "Sales" || objective === "Conversions") objective = "Conversion";
     }
 
-    return { ...c, adTypes, mediaChannel, targeting, objective };
+    const idHash = parseInt(String(c.id).replace(/\D/g, ""), 10) || 0;
+    const roasNum = parseFloat(String(c.roas ?? "1x").replace(/[^0-9.]/g, "")) || 1;
+    const parseSalesAmount = (): number => {
+      if (c.sales) return parseFloat(String(c.sales).replace(/[$,]/g, "")) || 0;
+      return Math.round(c.spend * roasNum);
+    };
+    const baseSales = parseSalesAmount();
+    const onlineShare = 0.36 + (idHash % 11) * 0.04;
+    const onlineAmt = Math.max(0, Math.round(baseSales * onlineShare));
+    const offlineAmt = Math.max(0, Math.round(baseSales - onlineAmt));
+    const fmtUsd = (n: number) => `$${n.toLocaleString()}`;
+    const roasOn = Math.round(roasNum * (0.82 + (idHash % 9) * 0.03) * 10) / 10;
+    const roasOff = Math.round(roasNum * (1.04 + (idHash % 7) * 0.035) * 10) / 10;
+    const impressions = 118000 + (idHash % 90) * 5800;
+    const ctrN = parseFloat(String(c.ctr ?? "0.5%").replace(/[^0-9.]/g, "")) || 0.5;
+    const clicks = Math.max(0, Math.round((impressions * ctrN) / 100));
+
+    return {
+      ...c,
+      adTypes,
+      mediaChannel,
+      objective,
+      totalSales: c.sales ?? (baseSales > 0 ? fmtUsd(baseSales) : undefined),
+      onlineSales: fmtUsd(onlineAmt),
+      offlineSales: fmtUsd(offlineAmt),
+      roasTotal: c.roas ?? `${roasNum.toFixed(1)}x`,
+      roasOnline: `${roasOn.toFixed(1)}x`,
+      roasOffline: `${roasOff.toFixed(1)}x`,
+      impressions,
+      clicks,
+    };
   };
 
   const enrichedCampaigns = useMemo(() => campaigns.map(enrichCampaign), [campaigns]);
@@ -1540,67 +1649,6 @@ function App() {
     campaigns.forEach(c => { if (c.mediaPlan) plans.add(c.mediaPlan); });
     return Array.from(plans).sort();
   }, [campaigns]);
-
-  // Helper function to calculate campaign health (matching CampaignsTable logic)
-  const calculateCampaignHealth = (campaign: Campaign) => {
-    let healthScore = 100;
-
-    // Check if paused
-    if (campaign.status === "Paused") {
-      healthScore -= 50;
-    }
-
-    // Check pacing
-    const pacingValue = parseFloat(campaign.pacing);
-    if (pacingValue < -30) {
-      healthScore -= 20;
-    } else if (pacingValue > 50) {
-      healthScore -= 15;
-    }
-
-    // Check budget vs time alignment
-    const calculateFlightCompletion = (startDate: string, endDate: string) => {
-      const today = new Date();
-      const start = new Date(startDate);
-      const end = new Date(endDate);
-      
-      if (today < start) return 0;
-      if (today > end) return 100;
-      
-      const totalDuration = end.getTime() - start.getTime();
-      const elapsedDuration = today.getTime() - start.getTime();
-      return (elapsedDuration / totalDuration) * 100;
-    };
-
-    const flightCompletion = calculateFlightCompletion(campaign.startDate, campaign.endDate);
-    const budgetSpent = (campaign.spend / campaign.budget) * 100;
-    const budgetTimeDiff = Math.abs(budgetSpent - flightCompletion);
-    
-    if (budgetTimeDiff > 40) {
-      healthScore -= 15;
-    }
-
-    // Check CTR
-    const ctrValue = parseFloat(campaign.ctr);
-    if (ctrValue < 0.3) {
-      healthScore -= 15;
-    }
-
-    // Check ROAS
-    const roasValue = parseFloat(campaign.roas);
-    if (roasValue < 1.0) {
-      healthScore -= 20;
-    }
-
-    // Determine health status
-    if (healthScore >= 70) {
-      return "healthy";
-    } else if (healthScore >= 50) {
-      return "warning";
-    } else {
-      return "critical";
-    }
-  };
 
   // Helper: parse a date string to a Date object for comparison
   const parseFilterDate = (dateStr: string): Date | null => {
@@ -1617,42 +1665,116 @@ function App() {
       case "objective": return campaign.objective || "";
       case "adTypes": return campaign.adTypes || "";
       case "mediaChannel": return campaign.mediaChannel || "";
-      case "targeting": return campaign.targeting || [];
       case "startDate": return campaign.startDate;
       case "endDate": return campaign.endDate;
+      case "lastModified": return campaign.lastModified || "";
       case "mediaPlan": return campaign.mediaPlan || "";
+      case "destination": return campaign.destination || "";
+      case "platform": return campaign.platform || "";
+      case "brandId": return campaign.brandId || "";
       default: return undefined;
     }
   };
 
+  const flightCompletedPercentForFilter = (c: Campaign): number => {
+    const today = new Date();
+    const start = new Date(c.startDate);
+    const end = new Date(c.endDate);
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) return 0;
+    if (today < start) return 0;
+    if (today > end) return 100;
+    const total = end.getTime() - start.getTime();
+    if (total <= 0) return 0;
+    return (today.getTime() - start.getTime()) / total * 100;
+  };
+
+  const budgetAtRiskForFilter = (c: Campaign): number => {
+    const pacingNum = parseFloat(String(c.pacing).replace(/[^0-9.-]/g, ""));
+    if (isNaN(pacingNum) || c.status === "Draft" || c.status === "Ended") return 0;
+    const fc = flightCompletedPercentForFilter(c) / 100;
+    const projected = fc > 0 ? c.spend / fc : 0;
+    return Math.max(0, projected - c.budget);
+  };
+
+  const parseFilterScalar = (raw: string): number => {
+    const n = parseFloat(String(raw).replace(/[^0-9.-]/g, ""));
+    return isNaN(n) ? 0 : n;
+  };
+
+  const getFilterNumericValue = (c: Campaign, field: string): number => {
+    const money = (s?: string) => parseFilterScalar(s || "0");
+    switch (field) {
+      case "budget": return c.budget;
+      case "spend": return c.spend;
+      case "budgetSpent": return c.budget > 0 ? (c.spend / c.budget) * 100 : 0;
+      case "remainingBudget": return c.budget - c.spend;
+      case "flightCompleted": return flightCompletedPercentForFilter(c);
+      case "pacing": return parseFilterScalar(c.pacing);
+      case "ctr": return parseFilterScalar(c.ctr);
+      case "cpc": return money(c.cpc);
+      case "cpm": return money(c.cpm);
+      case "conversionRate": return parseFilterScalar(c.conversionRate);
+      case "totalSales": return money(c.totalSales ?? c.sales);
+      case "onlineSales": return money(c.onlineSales);
+      case "offlineSales": return money(c.offlineSales);
+      case "roasTotal": return parseFilterScalar(c.roasTotal ?? c.roas);
+      case "roasOnline": return parseFilterScalar(c.roasOnline);
+      case "roasOffline": return parseFilterScalar(c.roasOffline);
+      case "clicks": return c.clicks ?? 0;
+      case "impressions": return c.impressions ?? 0;
+      case "budgetAtRisk": return budgetAtRiskForFilter(c);
+      default: return NaN;
+    }
+  };
+
+  const compareNumericFilter = (actual: number, op: string, threshold: number, threshold2?: number): boolean => {
+    switch (op) {
+      case "is greater than":
+      case "greater than":
+      case "Greater than":
+        return actual > threshold;
+      case "is less than":
+      case "less than":
+      case "Less than":
+        return actual < threshold;
+      case "is between":
+        if (threshold2 !== undefined) return actual >= threshold && actual <= threshold2;
+        return actual >= threshold;
+      case "is equal to":
+      case "equal to":
+      case "Equal to":
+        return Math.abs(actual - threshold) < 1e-6;
+      default:
+        return true;
+    }
+  };
+
+  const NUMERIC_FILTER_FIELDS = new Set([
+    "budget", "spend", "budgetSpent", "remainingBudget", "flightCompleted", "ctr", "cpc", "cpm",
+    "conversionRate", "totalSales", "onlineSales", "offlineSales",
+    "roasTotal", "roasOnline", "roasOffline", "clicks", "impressions", "budgetAtRisk",
+  ]);
+
+  const pacingBucketMatch = (pacingPct: number, label: string): boolean => {
+    if (label.includes("Under-pacing")) return pacingPct < 80;
+    if (label.includes("On track")) return pacingPct >= 80 && pacingPct <= 100;
+    if (label.includes("Over-pacing")) return pacingPct > 100;
+    return false;
+  };
+
   // Check if a single campaign matches a single filter rule
   const matchesFilterRule = (campaign: Campaign, rule: FilterRule): boolean => {
-    // Skip filters with no values set
     if (!rule.values || rule.values.length === 0) return true;
     if (!rule.field) return true;
 
-    const fieldValue = getCampaignFieldValue(campaign, rule.field);
-    if (fieldValue === undefined) return true;
-
-    // --- Targeting: array field with contains / does not contain ---
-    if (rule.field === "targeting") {
-      const targetingArr = Array.isArray(fieldValue) ? fieldValue : [fieldValue];
-      if (rule.operator === "contains") {
-        return rule.values.some(v => targetingArr.includes(v));
-      } else if (rule.operator === "does not contain") {
-        return !rule.values.some(v => targetingArr.includes(v));
-      }
-      return true;
-    }
-
-    // --- Date fields: startDate, endDate, lastModified ---
     if (rule.field === "startDate" || rule.field === "endDate" || rule.field === "lastModified") {
+      const fieldValue = getCampaignFieldValue(campaign, rule.field);
+      if (!fieldValue) return true;
       const campaignDate = parseFilterDate(fieldValue as string);
       const filterDate = parseFilterDate(rule.values[0]);
       if (!campaignDate || !filterDate) return true;
       campaignDate.setHours(0, 0, 0, 0);
       filterDate.setHours(0, 0, 0, 0);
-
       switch (rule.operator) {
         case "is":
         case "is on": return campaignDate.getTime() === filterDate.getTime();
@@ -1665,26 +1787,45 @@ function App() {
       }
     }
 
-    // --- Text fields: name, id, mediaPlan (case-insensitive partial match) ---
-    if (rule.field === "name" || rule.field === "id" || rule.field === "mediaPlan") {
-      const strValue = (fieldValue as string).toLowerCase();
-      const filterVal = rule.values[0]?.toLowerCase() || "";
-      if (rule.operator === "is") {
-        return strValue.includes(filterVal);
-      } else if (rule.operator === "is not") {
-        return !strValue.includes(filterVal);
+    if (rule.field === "pacing") {
+      const p = getFilterNumericValue(campaign, "pacing");
+      const isBucketValue = rule.values.some(
+        v => v.includes("Under-pacing") || v.includes("On track") || v.includes("Over-pacing"),
+      );
+      if ((rule.operator === "equals" || rule.operator === "is" || rule.operator === "is not") && isBucketValue) {
+        const any = rule.values.some(v => pacingBucketMatch(p, v));
+        return (rule.operator === "equals" || rule.operator === "is") ? any : !any;
       }
+      const threshold = parseFilterScalar(rule.values[0]);
+      const threshold2 = rule.values[1] ? parseFilterScalar(rule.values[1]) : undefined;
+      return compareNumericFilter(p, rule.operator, threshold, threshold2);
+    }
+
+    if (NUMERIC_FILTER_FIELDS.has(rule.field)) {
+      const actual = getFilterNumericValue(campaign, rule.field);
+      if (isNaN(actual)) return true;
+      const threshold = parseFilterScalar(rule.values[0]);
+      const threshold2 = rule.values[1] ? parseFilterScalar(rule.values[1]) : undefined;
+      return compareNumericFilter(actual, rule.operator, threshold, threshold2);
+    }
+
+    if (["name", "id", "mediaPlan", "destination", "platform", "brandId", "mediaChannel", "objective"].includes(rule.field)) {
+      const fieldValue = getCampaignFieldValue(campaign, rule.field);
+      if (fieldValue === undefined) return true;
+      const strValue = String(fieldValue).toLowerCase();
+      const filterVal = rule.values[0]?.toLowerCase() || "";
+      if (rule.operator === "equals" || rule.operator === "is") return strValue === filterVal;
+      if (rule.operator === "contains") return strValue.includes(filterVal);
+      if (rule.operator === "does not contain" || rule.operator === "is not") return !strValue.includes(filterVal);
       return true;
     }
 
-    // --- Dropdown fields: status, objective, adTypes, mediaChannel ---
-    const strValue = fieldValue as string;
-    if (rule.operator === "is") {
-      return rule.values.includes(strValue);
-    } else if (rule.operator === "is not") {
-      return !rule.values.includes(strValue);
-    }
-
+    const fieldValue = getCampaignFieldValue(campaign, rule.field);
+    if (fieldValue === undefined) return true;
+    const strValue = Array.isArray(fieldValue) ? fieldValue.join(",") : String(fieldValue);
+    if (rule.operator === "equals" || rule.operator === "is") return rule.values.includes(strValue);
+    if (rule.operator === "does not contain" || rule.operator === "is not") return !rule.values.includes(strValue);
+    if (rule.operator === "contains") return rule.values.some(v => strValue.toLowerCase().includes(v.toLowerCase()));
     return true;
   };
 
@@ -1696,7 +1837,7 @@ function App() {
 
     // Search filter
     const matchesSearch = campaign.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      campaign.id.includes(searchQuery);
+      campaign.id.toLowerCase().includes(searchQuery.toLowerCase());
     
     if (!matchesSearch) return false;
 
@@ -1704,34 +1845,35 @@ function App() {
     if (quickFilterStatus.length > 0) {
       if (!quickFilterStatus.includes(campaign.status)) return false;
     }
-    if (quickFilterTargeting.length > 0) {
-      const tArr = Array.isArray(campaign.targeting) ? campaign.targeting : [];
-      if (!quickFilterTargeting.some(t => tArr.includes(t))) return false;
-    }
     if (quickFilterObjective.length > 0) {
       if (!quickFilterObjective.includes(campaign.objective || "")) return false;
     }
     if (quickFilterAdTypes.length > 0) {
-      const onsiteMatch = quickFilterAdTypes.some(t => ["Product Listing Ads", "Auction Banner"].includes(t)) &&
-        (campaign.adTypes === "In Grid" || campaign.adTypes === "Banner" || campaign.adTypes === "Carousel" || campaign.adTypes === "Premium Banner" ||
-         (campaign.destination || "").toLowerCase().includes("onsite"));
-      const offMatch = quickFilterAdTypes.filter(t => ["Meta", "Google", "Pinterest"].includes(t));
-      const platformMatch = offMatch.length > 0 && offMatch.some(p =>
-        (campaign.platform || "").toLowerCase().includes(p.toLowerCase())
+      const hasOnsite = quickFilterAdTypes.some(t => quickFilterAdTypesOnsite.includes(t));
+      const offsiteSelections = quickFilterAdTypes.filter(t => (QUICK_OFFSITE_AD_TYPE_LABELS as readonly string[]).includes(t));
+      const hasOffsite = offsiteSelections.length > 0;
+      const onsiteMatch = hasOnsite && (
+        campaign.adTypes === "In Grid" || campaign.adTypes === "Banner" || campaign.adTypes === "Carousel" || campaign.adTypes === "Premium Banner" ||
+        (campaign.destination || "").toLowerCase().includes("onsite")
       );
-      if (!onsiteMatch && !platformMatch) return false;
+      const offsiteType = getOffsiteQuickAdType(campaign);
+      const offsiteMatch = hasOffsite && offsiteType != null && offsiteSelections.includes(offsiteType);
+      if (!onsiteMatch && !offsiteMatch) return false;
     }
     if (quickFilterMediaPlan.length > 0) {
       if (!quickFilterMediaPlan.includes(campaign.mediaPlan || "")) return false;
     }
+    if (quickFilterPlatform.length > 0) {
+      if (!matchesPlatformQuickFilter(campaign, quickFilterPlatform)) return false;
+    }
 
     // Apply all filter rules (AND logic — campaign must match every rule)
     // Skip fields handled by quick filters to avoid double-filtering
-    const quickFilterFields = ["status", "targeting", "objective", "adTypes", "mediaPlan"];
+    const quickFilterFields = ["status", "objective", "adTypes", "mediaPlan", "platform"];
     const activeFilters = appliedFilters.filter(f => f.field && f.values && f.values.length > 0 && !quickFilterFields.includes(f.field));
     for (const rule of activeFilters) {
       // Skip display-only metric filters in the Needs Attention view (they use OR logic below)
-      if (activeViewFilter === "attention" && ["pacing", "roas", "ctr"].includes(rule.field)) continue;
+      if (activeViewFilter === "attention" && ["pacing", "roasTotal", "ctr"].includes(rule.field)) continue;
       if (!matchesFilterRule(campaign, rule)) return false;
     }
 
@@ -1746,7 +1888,7 @@ function App() {
       }
     }
 
-    // Needs Attention view — must satisfy at least one: pacing < 80%, ROAS < 1.5, CTR < 0.3%
+    // Needs Attention view — must satisfy at least one: pacing < 90%, ROAS < 2.0, CTR < 1.0%
     if (activeViewFilter === "attention") {
       const hasAnyStatusFilter = quickFilterStatus.length > 0 || activeFilters.some(f => f.field === "status");
       if (!hasAnyStatusFilter) {
@@ -1755,13 +1897,8 @@ function App() {
       const pacingVal = parseFloat((campaign.pacing || "100").replace("%", ""));
       const roasVal = parseFloat((campaign.roas || "0").replace("x", ""));
       const ctrVal = parseFloat((campaign.ctr || "0").replace("%", ""));
-      if (pacingVal >= 80 && roasVal >= 1.5 && ctrVal >= 0.3) return false;
+      if (pacingVal >= 90 && roasVal >= 2.0 && ctrVal >= 1.0) return false;
       return true;
-    }
-
-    // Watchlist view — show only starred campaigns (all statuses)
-    if (activeViewFilter === "watchlist") {
-      return starredCampaignIds.has(campaign.id);
     }
 
     // If no status filter is active (neither quick nor advanced), apply default view-based filtering
@@ -1795,14 +1932,11 @@ function App() {
       const pacingVal = parseFloat((c.pacing || "100").replace("%", ""));
       const roasVal = parseFloat((c.roas || "0").replace("x", ""));
       const ctrVal = parseFloat((c.ctr || "0").replace("%", ""));
-      return pacingVal < 80 || roasVal < 1.5 || ctrVal < 0.3;
+      return pacingVal < 90 || roasVal < 2.0 || ctrVal < 1.0;
     }).length;
     
     // "draft" (Drafts): only Draft status
     counts["draft"] = enrichedCampaigns.filter(c => c.status === "Draft").length;
-    
-    // "watchlist": starred campaigns
-    counts["watchlist"] = starredCampaignIds.size;
     
     // "ending7d": Running/Paused with end date within 7 days
     const today = new Date();
@@ -1963,8 +2097,8 @@ function App() {
         return { label: "Drafts", icon: "draft" as const, description: "Review and launch campaigns that are not yet active." };
       case "attention":
         return { label: "Needs Attention", icon: "attention" as const, description: "View campaigns that require action due to performance issues." };
-      case "watchlist":
-        return { label: "Watchlist", icon: "watchlist" as const, description: "Track your starred campaigns in one place." };
+      case "ending7d":
+        return { label: "Ending in 7 Days", icon: "ending7d" as const, description: "Running and paused campaigns with an end date in the next 7 days." };
       default:
         return { label: tabId, icon: null, description: undefined };
     }
@@ -1995,16 +2129,6 @@ function App() {
               </nav>
 
               <div className="flex items-center gap-4">
-                <label className="flex items-center gap-2 cursor-pointer select-none">
-                  <span className="text-xs text-gray-400">Raw Names</span>
-                  <Switch checked={showDemoNames} onCheckedChange={setShowDemoNames} />
-                </label>
-                <div className="relative">
-                  <Bell className="w-5 h-5 text-gray-600" />
-                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-orange-500 rounded-full text-xs text-white flex items-center justify-center">
-                    4
-                  </span>
-                </div>
                 <img src={dewaltLogo} alt="DEWALT" className="h-8 w-8 rounded object-cover" />
                 <div className="text-sm text-gray-600">Dewalt - Home Depot</div>
               </div>
@@ -2018,11 +2142,6 @@ function App() {
           <div className="mb-2 px-6">
             <h1 className="text-2xl font-semibold text-gray-900">Your Campaigns</h1>
           </div>
-
-          {/* Summary Cards - hidden for now */}
-          {/* <div className="pt-2">
-            <CampaignSummaryCards />
-          </div> */}
 
           {/* Views Filter Bar */}
           <div className="mb-2 border-b border-border px-6">
@@ -2047,7 +2166,7 @@ function App() {
                           isCustomView={isCustom}
                           isDefaultView={defaultViewId === tabId}
                           onClick={() => setActiveViewFilter(tabId)}
-                          onEdit={tabId === "watchlist" ? undefined : () => {
+                          onEdit={() => {
                             setEditingViewName(tabId);
                             setNewViewName(tabInfo.label);
                             setIsEditingView(true);
@@ -2137,7 +2256,7 @@ function App() {
                                 {tabCounts[tabId] ?? 0}
                               </span>
                               {/* Always-visible edit & delete for overflow items */}
-                              {tabId !== "watchlist" && (
+                              {(
                                 <button
                                   className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
                                   onClick={(e) => {
@@ -2216,11 +2335,188 @@ function App() {
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
               <Input
                 type="text"
-                placeholder="search"
+                placeholder="Search by name or ID"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="h-9 pl-9 rounded-lg bg-white border-gray-300 hover:border-gray-400"
               />
+            </div>
+
+            {/* Inline Quick Filter Pills */}
+            <div className="flex items-center gap-1.5">
+              {/* Status Filter */}
+              <Popover open={qfOpenStatus} onOpenChange={setQfOpenStatus}>
+                <PopoverTrigger asChild>
+                  <button className={`inline-flex items-center gap-1.5 h-8 px-3 text-sm rounded-full border transition-colors ${
+                    quickFilterStatus.length > 0 ? "bg-[#f26318]/10 border-[#f26318]/30 text-[#f26318]" : "border-gray-300 text-gray-600 hover:border-gray-400 hover:bg-gray-50"
+                  }`}>
+                    <span className="whitespace-nowrap">Status</span>
+                    {quickFilterStatus.length > 0 && (
+                      <span className="bg-[#f26318] text-white text-[10px] rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center font-medium leading-none">{quickFilterStatus.length}</span>
+                    )}
+                    <ChevronDown className="w-3 h-3" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[220px] p-0" align="start">
+                  <div className="py-1">
+                    <div className="px-3 pt-1.5 pb-1 flex items-center justify-between">
+                      <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</span>
+                      {quickFilterStatus.length > 0 && (
+                        <button onClick={() => setQuickFilterStatus([])} className="text-[11px] text-[#f26318] hover:underline">Clear</button>
+                      )}
+                    </div>
+                    {quickFilterStatusOptions.map(opt => (
+                      <button key={opt} type="button" onClick={() => toggleQuickValue(quickFilterStatus, setQuickFilterStatus, opt)} className="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 text-left">
+                        <div className={`w-4 h-4 border rounded flex items-center justify-center shrink-0 ${quickFilterStatus.includes(opt) ? "bg-[#f26318] border-[#f26318]" : "border-gray-300"}`}>
+                          {quickFilterStatus.includes(opt) && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>}
+                        </div>
+                        <span className="text-sm text-gray-700">{opt}</span>
+                      </button>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+
+              {/* Ad Type Filter */}
+              <Popover open={qfOpenAdTypes} onOpenChange={setQfOpenAdTypes}>
+                <PopoverTrigger asChild>
+                  <button className={`inline-flex items-center gap-1.5 h-8 px-3 text-sm rounded-full border transition-colors ${
+                    quickFilterAdTypes.length > 0 ? "bg-[#f26318]/10 border-[#f26318]/30 text-[#f26318]" : "border-gray-300 text-gray-600 hover:border-gray-400 hover:bg-gray-50"
+                  }`}>
+                    <span className="whitespace-nowrap">Ad Type</span>
+                    {quickFilterAdTypes.length > 0 && (
+                      <span className="bg-[#f26318] text-white text-[10px] rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center font-medium leading-none">{quickFilterAdTypes.length}</span>
+                    )}
+                    <ChevronDown className="w-3 h-3" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[min(100vw-2rem,280px)] p-0" align="start">
+                  <div className="py-1">
+                    <div className="px-3 pt-1.5 pb-1 flex items-center justify-between">
+                      <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Ad Type</span>
+                      {quickFilterAdTypes.length > 0 && (
+                        <button onClick={() => setQuickFilterAdTypes([])} className="text-[11px] text-[#f26318] hover:underline">Clear</button>
+                      )}
+                    </div>
+                    <button type="button" onClick={() => toggleQuickGroup(quickFilterAdTypes, setQuickFilterAdTypes, quickFilterAdTypesOnsite)} className="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 text-left">
+                      <div className={`w-4 h-4 border rounded flex items-center justify-center shrink-0 ${
+                        quickFilterAdTypesOnsite.every(c => quickFilterAdTypes.includes(c))
+                          ? "bg-[#f26318] border-[#f26318]"
+                          : quickFilterAdTypesOnsite.some(c => quickFilterAdTypes.includes(c))
+                            ? "bg-[#f26318]/40 border-[#f26318]"
+                            : "border-gray-300"
+                      }`}>
+                        {quickFilterAdTypesOnsite.every(c => quickFilterAdTypes.includes(c)) && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>}
+                        {!quickFilterAdTypesOnsite.every(c => quickFilterAdTypes.includes(c)) && quickFilterAdTypesOnsite.some(c => quickFilterAdTypes.includes(c)) && <div className="w-2 h-0.5 bg-white rounded" />}
+                      </div>
+                      <span className="text-sm font-medium text-gray-700">On-Site</span>
+                    </button>
+                    {quickFilterAdTypesOnsite.map(opt => (
+                      <button key={opt} type="button" onClick={() => toggleQuickValue(quickFilterAdTypes, setQuickFilterAdTypes, opt)} className="w-full flex items-center gap-2.5 pl-8 pr-3 py-1.5 hover:bg-gray-50 text-left">
+                        <div className={`w-4 h-4 border rounded flex items-center justify-center shrink-0 ${quickFilterAdTypes.includes(opt) ? "bg-[#f26318] border-[#f26318]" : "border-gray-300"}`}>
+                          {quickFilterAdTypes.includes(opt) && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>}
+                        </div>
+                        <span className="text-sm text-gray-600">{opt}</span>
+                      </button>
+                    ))}
+                    <div className="my-1 mx-3 border-t border-gray-100" />
+                    <button type="button" onClick={() => toggleQuickGroup(quickFilterAdTypes, setQuickFilterAdTypes, quickFilterAdTypesOffsite)} className="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 text-left">
+                      <div className={`w-4 h-4 border rounded flex items-center justify-center shrink-0 ${
+                        quickFilterAdTypesOffsite.every(c => quickFilterAdTypes.includes(c))
+                          ? "bg-[#f26318] border-[#f26318]"
+                          : quickFilterAdTypesOffsite.some(c => quickFilterAdTypes.includes(c))
+                            ? "bg-[#f26318]/40 border-[#f26318]"
+                            : "border-gray-300"
+                      }`}>
+                        {quickFilterAdTypesOffsite.every(c => quickFilterAdTypes.includes(c)) && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>}
+                        {!quickFilterAdTypesOffsite.every(c => quickFilterAdTypes.includes(c)) && quickFilterAdTypesOffsite.some(c => quickFilterAdTypes.includes(c)) && <div className="w-2 h-0.5 bg-white rounded" />}
+                      </div>
+                      <span className="text-sm font-medium text-gray-700">Off-Site</span>
+                    </button>
+                    {quickFilterAdTypesOffsite.map(opt => (
+                      <button key={opt} type="button" onClick={() => toggleQuickValue(quickFilterAdTypes, setQuickFilterAdTypes, opt)} className="w-full flex items-center gap-2.5 pl-8 pr-3 py-1.5 hover:bg-gray-50 text-left">
+                        <div className={`w-4 h-4 border rounded flex items-center justify-center shrink-0 ${quickFilterAdTypes.includes(opt) ? "bg-[#f26318] border-[#f26318]" : "border-gray-300"}`}>
+                          {quickFilterAdTypes.includes(opt) && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>}
+                        </div>
+                        <span className="text-sm text-gray-600">{opt}</span>
+                      </button>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+
+              {/* Platform Filter */}
+              <Popover open={qfOpenPlatform} onOpenChange={setQfOpenPlatform}>
+                <PopoverTrigger asChild>
+                  <button className={`inline-flex items-center gap-1.5 h-8 px-3 text-sm rounded-full border transition-colors ${
+                    quickFilterPlatform.length > 0 ? "bg-[#f26318]/10 border-[#f26318]/30 text-[#f26318]" : "border-gray-300 text-gray-600 hover:border-gray-400 hover:bg-gray-50"
+                  }`}>
+                    <span className="whitespace-nowrap">Platform</span>
+                    {quickFilterPlatform.length > 0 && (
+                      <span className="bg-[#f26318] text-white text-[10px] rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center font-medium leading-none">{quickFilterPlatform.length}</span>
+                    )}
+                    <ChevronDown className="w-3 h-3" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[min(100vw-2rem,240px)] p-0" align="start">
+                  <div className="py-1">
+                    <div className="px-3 pt-1.5 pb-1 flex items-center justify-between">
+                      <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Platform</span>
+                      {quickFilterPlatform.length > 0 && (
+                        <button type="button" onClick={() => setQuickFilterPlatform([])} className="text-[11px] text-[#f26318] hover:underline">Clear</button>
+                      )}
+                    </div>
+                    {quickFilterPlatformOptions.map(opt => (
+                      <button key={opt} type="button" onClick={() => toggleQuickValue(quickFilterPlatform, setQuickFilterPlatform, opt)} className="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 text-left">
+                        <div className={`w-4 h-4 border rounded flex items-center justify-center shrink-0 ${quickFilterPlatform.includes(opt) ? "bg-[#f26318] border-[#f26318]" : "border-gray-300"}`}>
+                          {quickFilterPlatform.includes(opt) && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>}
+                        </div>
+                        <span className="text-sm text-gray-700">{opt}</span>
+                      </button>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+
+              {/* Objective Filter */}
+              <Popover open={qfOpenObjective} onOpenChange={setQfOpenObjective}>
+                <PopoverTrigger asChild>
+                  <button className={`inline-flex items-center gap-1.5 h-8 px-3 text-sm rounded-full border transition-colors ${
+                    quickFilterObjective.length > 0 ? "bg-[#f26318]/10 border-[#f26318]/30 text-[#f26318]" : "border-gray-300 text-gray-600 hover:border-gray-400 hover:bg-gray-50"
+                  }`}>
+                    <span className="whitespace-nowrap">Objective</span>
+                    {quickFilterObjective.length > 0 && (
+                      <span className="bg-[#f26318] text-white text-[10px] rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center font-medium leading-none">{quickFilterObjective.length}</span>
+                    )}
+                    <ChevronDown className="w-3 h-3" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[200px] p-0" align="start">
+                  <div className="py-1">
+                    <div className="px-3 pt-1.5 pb-1 flex items-center justify-between">
+                      <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Objective</span>
+                      {quickFilterObjective.length > 0 && (
+                        <button onClick={() => setQuickFilterObjective([])} className="text-[11px] text-[#f26318] hover:underline">Clear</button>
+                      )}
+                    </div>
+                    {quickFilterObjectiveOptions.map(opt => (
+                      <button key={opt} type="button" onClick={() => toggleQuickValue(quickFilterObjective, setQuickFilterObjective, opt)} className="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 text-left">
+                        <div className={`w-4 h-4 border rounded flex items-center justify-center shrink-0 ${quickFilterObjective.includes(opt) ? "bg-[#f26318] border-[#f26318]" : "border-gray-300"}`}>
+                          {quickFilterObjective.includes(opt) && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>}
+                        </div>
+                        <span className="text-sm text-gray-700">{opt}</span>
+                      </button>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+
+              {/* Clear all quick filters */}
+              {quickFilterActiveCount > 0 && (
+                <button onClick={clearAllQuickFilters} className="text-xs text-gray-400 hover:text-gray-600 ml-1">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
 
             <div className="flex-1"></div>
@@ -2230,165 +2526,6 @@ function App() {
               value={dateRange}
               onChange={setDateRange}
             />
-
-            {/* Quick Filter Dropdown */}
-            <Popover open={showQuickFilter} onOpenChange={setShowQuickFilter}>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  className="gap-2 h-9 rounded-lg border-gray-300 hover:border-gray-400"
-                >
-                  <SlidersHorizontal className="w-4 h-4" />
-                  Quick Filters
-                  {quickFilterActiveCount > 0 && (
-                    <span className="ml-1 bg-[#f26318] text-white text-[10px] rounded-full w-5 h-5 flex items-center justify-center">
-                      {quickFilterActiveCount}
-                    </span>
-                  )}
-                  <ChevronDown className="w-4 h-4" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-[300px] p-0" align="end">
-                <div className="max-h-[480px] overflow-y-auto py-1">
-
-                  {/* ── Status ── */}
-                  <div className="px-3 pt-2 pb-1 flex items-center justify-between">
-                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</span>
-                    {quickFilterActiveCount > 0 && (
-                      <button onClick={clearAllQuickFilters} className="text-[11px] text-[#f26318] hover:underline">Clear all</button>
-                    )}
-                  </div>
-                  {quickFilterStatusOptions.map(opt => (
-                    <button key={opt} type="button" onClick={() => toggleQuickValue(quickFilterStatus, setQuickFilterStatus, opt)} className="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 text-left">
-                      <div className={`w-4 h-4 border rounded flex items-center justify-center shrink-0 ${quickFilterStatus.includes(opt) ? "bg-[#f26318] border-[#f26318]" : "border-gray-300"}`}>
-                        {quickFilterStatus.includes(opt) && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>}
-                      </div>
-                      <span className="text-sm text-gray-700">{opt}</span>
-                    </button>
-                  ))}
-                  {/* Awaiting Verification parent */}
-                  <button type="button" onClick={() => toggleQuickGroup(quickFilterStatus, setQuickFilterStatus, quickFilterAwaitingOptions)} className="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 text-left">
-                    <div className={`w-4 h-4 border rounded flex items-center justify-center shrink-0 ${
-                      quickFilterAwaitingOptions.every(c => quickFilterStatus.includes(c))
-                        ? "bg-[#f26318] border-[#f26318]"
-                        : quickFilterAwaitingOptions.some(c => quickFilterStatus.includes(c))
-                          ? "bg-[#f26318]/40 border-[#f26318]"
-                          : "border-gray-300"
-                    }`}>
-                      {quickFilterAwaitingOptions.every(c => quickFilterStatus.includes(c)) && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>}
-                      {!quickFilterAwaitingOptions.every(c => quickFilterStatus.includes(c)) && quickFilterAwaitingOptions.some(c => quickFilterStatus.includes(c)) && <div className="w-2 h-0.5 bg-white rounded" />}
-                    </div>
-                    <span className="text-sm text-gray-700">Awaiting Verification</span>
-                  </button>
-                  {quickFilterAwaitingOptions.map(opt => (
-                    <button key={opt} type="button" onClick={() => toggleQuickValue(quickFilterStatus, setQuickFilterStatus, opt)} className="w-full flex items-center gap-2.5 pl-8 pr-3 py-1.5 hover:bg-gray-50 text-left">
-                      <div className={`w-4 h-4 border rounded flex items-center justify-center shrink-0 ${quickFilterStatus.includes(opt) ? "bg-[#f26318] border-[#f26318]" : "border-gray-300"}`}>
-                        {quickFilterStatus.includes(opt) && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>}
-                      </div>
-                      <span className="text-sm text-gray-600">{opt}</span>
-                    </button>
-                  ))}
-
-                  <div className="my-1.5 border-t border-gray-200" />
-
-                  {/* ── Targeting ── */}
-                  <div className="px-3 pt-1 pb-1">
-                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Targeting</span>
-                  </div>
-                  {quickFilterTargetingOptions.map(opt => (
-                    <button key={opt} type="button" onClick={() => toggleQuickValue(quickFilterTargeting, setQuickFilterTargeting, opt)} className="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 text-left">
-                      <div className={`w-4 h-4 border rounded flex items-center justify-center shrink-0 ${quickFilterTargeting.includes(opt) ? "bg-[#f26318] border-[#f26318]" : "border-gray-300"}`}>
-                        {quickFilterTargeting.includes(opt) && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>}
-                      </div>
-                      <span className="text-sm text-gray-700">{opt}</span>
-                    </button>
-                  ))}
-
-                  <div className="my-1.5 border-t border-gray-200" />
-
-                  {/* ── Objective ── */}
-                  <div className="px-3 pt-1 pb-1">
-                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Objective</span>
-                  </div>
-                  {quickFilterObjectiveOptions.map(opt => (
-                    <button key={opt} type="button" onClick={() => toggleQuickValue(quickFilterObjective, setQuickFilterObjective, opt)} className="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 text-left">
-                      <div className={`w-4 h-4 border rounded flex items-center justify-center shrink-0 ${quickFilterObjective.includes(opt) ? "bg-[#f26318] border-[#f26318]" : "border-gray-300"}`}>
-                        {quickFilterObjective.includes(opt) && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>}
-                      </div>
-                      <span className="text-sm text-gray-700">{opt}</span>
-                    </button>
-                  ))}
-
-                  <div className="my-1.5 border-t border-gray-200" />
-
-                  {/* ── Ad Types ── */}
-                  <div className="px-3 pt-1 pb-1">
-                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Ad Types</span>
-                  </div>
-                  {/* Onsite parent */}
-                  <button type="button" onClick={() => toggleQuickGroup(quickFilterAdTypes, setQuickFilterAdTypes, quickFilterAdTypesOnsite)} className="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 text-left">
-                    <div className={`w-4 h-4 border rounded flex items-center justify-center shrink-0 ${
-                      quickFilterAdTypesOnsite.every(c => quickFilterAdTypes.includes(c))
-                        ? "bg-[#f26318] border-[#f26318]"
-                        : quickFilterAdTypesOnsite.some(c => quickFilterAdTypes.includes(c))
-                          ? "bg-[#f26318]/40 border-[#f26318]"
-                          : "border-gray-300"
-                    }`}>
-                      {quickFilterAdTypesOnsite.every(c => quickFilterAdTypes.includes(c)) && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>}
-                      {!quickFilterAdTypesOnsite.every(c => quickFilterAdTypes.includes(c)) && quickFilterAdTypesOnsite.some(c => quickFilterAdTypes.includes(c)) && <div className="w-2 h-0.5 bg-white rounded" />}
-                    </div>
-                    <span className="text-sm text-gray-700">Onsite</span>
-                  </button>
-                  {quickFilterAdTypesOnsite.map(opt => (
-                    <button key={opt} type="button" onClick={() => toggleQuickValue(quickFilterAdTypes, setQuickFilterAdTypes, opt)} className="w-full flex items-center gap-2.5 pl-8 pr-3 py-1.5 hover:bg-gray-50 text-left">
-                      <div className={`w-4 h-4 border rounded flex items-center justify-center shrink-0 ${quickFilterAdTypes.includes(opt) ? "bg-[#f26318] border-[#f26318]" : "border-gray-300"}`}>
-                        {quickFilterAdTypes.includes(opt) && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>}
-                      </div>
-                      <span className="text-sm text-gray-600">{opt}</span>
-                    </button>
-                  ))}
-                  <div className="my-1 mx-3 border-t border-gray-100" />
-                  {/* Offsite parent */}
-                  <button type="button" onClick={() => toggleQuickGroup(quickFilterAdTypes, setQuickFilterAdTypes, quickFilterAdTypesOffsite)} className="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 text-left">
-                    <div className={`w-4 h-4 border rounded flex items-center justify-center shrink-0 ${
-                      quickFilterAdTypesOffsite.every(c => quickFilterAdTypes.includes(c))
-                        ? "bg-[#f26318] border-[#f26318]"
-                        : quickFilterAdTypesOffsite.some(c => quickFilterAdTypes.includes(c))
-                          ? "bg-[#f26318]/40 border-[#f26318]"
-                          : "border-gray-300"
-                    }`}>
-                      {quickFilterAdTypesOffsite.every(c => quickFilterAdTypes.includes(c)) && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>}
-                      {!quickFilterAdTypesOffsite.every(c => quickFilterAdTypes.includes(c)) && quickFilterAdTypesOffsite.some(c => quickFilterAdTypes.includes(c)) && <div className="w-2 h-0.5 bg-white rounded" />}
-                    </div>
-                    <span className="text-sm text-gray-700">Offsite</span>
-                  </button>
-                  {quickFilterAdTypesOffsite.map(opt => (
-                    <button key={opt} type="button" onClick={() => toggleQuickValue(quickFilterAdTypes, setQuickFilterAdTypes, opt)} className="w-full flex items-center gap-2.5 pl-8 pr-3 py-1.5 hover:bg-gray-50 text-left">
-                      <div className={`w-4 h-4 border rounded flex items-center justify-center shrink-0 ${quickFilterAdTypes.includes(opt) ? "bg-[#f26318] border-[#f26318]" : "border-gray-300"}`}>
-                        {quickFilterAdTypes.includes(opt) && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>}
-                      </div>
-                      <span className="text-sm text-gray-600">{opt}</span>
-                    </button>
-                  ))}
-
-                  <div className="my-1.5 border-t border-gray-200" />
-
-                  {/* ── Media Plan ── */}
-                  <div className="px-3 pt-1 pb-1">
-                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Media Plan</span>
-                  </div>
-                  {quickFilterMediaPlanOptions.map(opt => (
-                    <button key={opt} type="button" onClick={() => toggleQuickValue(quickFilterMediaPlan, setQuickFilterMediaPlan, opt)} className="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 text-left">
-                      <div className={`w-4 h-4 border rounded flex items-center justify-center shrink-0 ${quickFilterMediaPlan.includes(opt) ? "bg-[#f26318] border-[#f26318]" : "border-gray-300"}`}>
-                        {quickFilterMediaPlan.includes(opt) && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>}
-                      </div>
-                      <span className="text-sm text-gray-700">{opt}</span>
-                    </button>
-                  ))}
-                  <div className="pb-1" />
-                </div>
-              </PopoverContent>
-            </Popover>
 
             {/* Advanced Filters Dropdown */}
             <DropdownMenu open={showFiltersDropdown} onOpenChange={(open) => {
@@ -2446,14 +2583,26 @@ function App() {
                             <DropdownMenuLabel className="bg-gray-50 text-xs font-semibold text-gray-500 uppercase tracking-wider">
                               Campaign Setup
                             </DropdownMenuLabel>
-                            <DropdownMenuItem onClick={() => updateTempFilterField(filter.id, "name")}>
-                              Name
-                            </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => updateTempFilterField(filter.id, "id")}>
                               ID
                             </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => updateTempFilterField(filter.id, "name")}>
+                              Name
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => updateTempFilterField(filter.id, "status")}>
+                              Status
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => updateTempFilterField(filter.id, "destination")}>
+                              Ad Type
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => updateTempFilterField(filter.id, "objective")}>
+                              Objective
+                            </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => updateTempFilterField(filter.id, "mediaChannel")}>
                               Media Channel
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => updateTempFilterField(filter.id, "platform")}>
+                              Platform
                             </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => updateTempFilterField(filter.id, "startDate")}>
                               Start Date
@@ -2461,18 +2610,20 @@ function App() {
                             <DropdownMenuItem onClick={() => updateTempFilterField(filter.id, "endDate")}>
                               End Date
                             </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => updateTempFilterField(filter.id, "mediaPlan")}>
+                              Media Plan
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => updateTempFilterField(filter.id, "brandId")}>
+                              Brand ID
+                            </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => updateTempFilterField(filter.id, "lastModified")}>
                               Last Modified
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => updateTempFilterField(filter.id, "flightCompleted")}>
-                              % Flight Completed
                             </DropdownMenuItem>
                             
                             <DropdownMenuSeparator />
                             
-                            {/* Budget & Pacing Section */}
                             <DropdownMenuLabel className="bg-gray-50 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                              Budget & Pacing
+                              Within Budget &amp; Pacing
                             </DropdownMenuLabel>
                             <DropdownMenuItem onClick={() => updateTempFilterField(filter.id, "pacing")}>
                               Pacing
@@ -2489,27 +2640,53 @@ function App() {
                             <DropdownMenuItem onClick={() => updateTempFilterField(filter.id, "remainingBudget")}>
                               Remaining Budget
                             </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => updateTempFilterField(filter.id, "flightCompleted")}>
+                              % Flight Completed
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => updateTempFilterField(filter.id, "budgetAtRisk")}>
+                              Budget at Risk
+                            </DropdownMenuItem>
                             
                             <DropdownMenuSeparator />
                             
-                            {/* Performance Section */}
                             <DropdownMenuLabel className="bg-gray-50 text-xs font-semibold text-gray-500 uppercase tracking-wider">
                               Performance
                             </DropdownMenuLabel>
+                            <DropdownMenuItem onClick={() => updateTempFilterField(filter.id, "totalSales")}>
+                              Total Sales
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => updateTempFilterField(filter.id, "onlineSales")}>
+                              Online Sales
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => updateTempFilterField(filter.id, "offlineSales")}>
+                              Offline Sales
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => updateTempFilterField(filter.id, "roasTotal")}>
+                              Total ROAS
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => updateTempFilterField(filter.id, "roasOnline")}>
+                              Online ROAS
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => updateTempFilterField(filter.id, "roasOffline")}>
+                              Offline ROAS
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => updateTempFilterField(filter.id, "clicks")}>
+                              Clicks
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => updateTempFilterField(filter.id, "impressions")}>
+                              Impressions
+                            </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => updateTempFilterField(filter.id, "ctr")}>
                               CTR
                             </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => updateTempFilterField(filter.id, "cpc")}>
                               CPC
                             </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => updateTempFilterField(filter.id, "cpm")}>
+                              CPM
+                            </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => updateTempFilterField(filter.id, "conversionRate")}>
                               Conversion Rate
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => updateTempFilterField(filter.id, "sales")}>
-                              Sales
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => updateTempFilterField(filter.id, "roas")}>
-                              ROAS
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
@@ -2546,7 +2723,90 @@ function App() {
                         </Popover>
 
                         {/* Value Input/Dropdown */}
-                        {inputType === "date" ? (
+                        {inputType === "multi-text" ? (
+                          <div className="w-[180px] space-y-1.5">
+                            <div className="flex items-center gap-1">
+                              <Input
+                                type="text"
+                                placeholder="Type or paste IDs..."
+                                value={multiTextInputValue}
+                                onChange={(e) => setMultiTextInputValue(e.target.value)}
+                                onKeyDown={(e) => {
+                                  e.stopPropagation();
+                                  if (e.key === "Enter" || e.key === ",") {
+                                    e.preventDefault();
+                                    if (multiTextInputValue.trim()) {
+                                      addTempMultiTextValues(filter.id, multiTextInputValue);
+                                      setMultiTextInputValue("");
+                                    }
+                                  }
+                                  if (e.key === "Backspace" && multiTextInputValue === "" && filter.values.length > 0) {
+                                    removeTempMultiTextValue(filter.id, filter.values[filter.values.length - 1]);
+                                  }
+                                }}
+                                onPaste={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  const pasted = e.clipboardData.getData("text");
+                                  addTempMultiTextValues(filter.id, pasted);
+                                  setMultiTextInputValue("");
+                                }}
+                                className="flex-1 text-sm h-9"
+                              />
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="shrink-0 text-xs px-2 h-9"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (multiTextInputValue.trim()) {
+                                    addTempMultiTextValues(filter.id, multiTextInputValue);
+                                    setMultiTextInputValue("");
+                                  }
+                                }}
+                              >
+                                Add
+                              </Button>
+                            </div>
+                            {filter.values.length > 0 && (
+                              <div className="max-h-[100px] overflow-y-auto rounded-md border border-gray-200 bg-gray-50 p-1.5">
+                                <div className="flex flex-wrap gap-1">
+                                  {filter.values.map((v) => (
+                                    <span
+                                      key={v}
+                                      className="inline-flex items-center gap-0.5 rounded bg-orange-50 border border-orange-200 px-1.5 py-0.5 text-[11px] font-medium text-orange-800"
+                                    >
+                                      {v}
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          removeTempMultiTextValue(filter.id, v);
+                                        }}
+                                        className="text-orange-400 hover:text-orange-700 transition-colors"
+                                      >
+                                        <X className="w-2.5 h-2.5" />
+                                      </button>
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            {filter.values.length > 1 && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  updateTempFilterValues(filter.id, []);
+                                }}
+                                className="text-[11px] text-gray-400 hover:text-gray-600 transition-colors"
+                              >
+                                Clear all
+                              </button>
+                            )}
+                            <p className="text-[10px] text-gray-400 leading-tight">
+                              Separate with commas, newlines, or semicolons
+                            </p>
+                          </div>
+                        ) : inputType === "date" ? (
                           <div className="relative w-[180px]">
                             <input
                               type="date"
@@ -2675,9 +2935,8 @@ function App() {
           </div>
 
           {/* Campaigns Table with integrated filters */}
-          <CampaignsTable 
+          <CampaignsTable
             campaigns={filteredCampaigns}
-            showDemoNames={showDemoNames}
             searchQuery={searchQuery}
             setSearchQuery={setSearchQuery}
             selectedStatuses={selectedStatuses}
@@ -2694,24 +2953,45 @@ function App() {
             setAppliedFiltersInApp={setAppliedFilters}
             onStarredChange={(ids) => setStarredCampaignIds(new Set(ids))}
             quickFilters={{
-              targeting: quickFilterTargeting,
+              status: quickFilterStatus,
               objective: quickFilterObjective,
               adTypes: quickFilterAdTypes,
               mediaPlan: quickFilterMediaPlan,
+              platform: quickFilterPlatform,
             }}
             onRemoveQuickFilter={(category, value) => {
-              if (category === "targeting") setQuickFilterTargeting(prev => prev.filter(v => v !== value));
-              else if (category === "objective") setQuickFilterObjective(prev => prev.filter(v => v !== value));
-              else if (category === "adTypes") setQuickFilterAdTypes(prev => prev.filter(v => v !== value));
-              else if (category === "mediaPlan") setQuickFilterMediaPlan(prev => prev.filter(v => v !== value));
+              if (value === "__all__") {
+                if (category === "status") setQuickFilterStatus([]);
+                else if (category === "objective") setQuickFilterObjective([]);
+                else if (category === "adTypes") setQuickFilterAdTypes([]);
+                else if (category === "platform") setQuickFilterPlatform([]);
+                else if (category === "mediaPlan") setQuickFilterMediaPlan([]);
+              } else {
+                if (category === "status") setQuickFilterStatus(prev => prev.filter(v => v !== value));
+                else if (category === "objective") setQuickFilterObjective(prev => prev.filter(v => v !== value));
+                else if (category === "adTypes") setQuickFilterAdTypes(prev => prev.filter(v => v !== value));
+                else if (category === "platform") setQuickFilterPlatform(prev => prev.filter(v => v !== value));
+              }
             }}
             onClearAllFilters={() => {
               setQuickFilterStatus([]);
-              setQuickFilterTargeting([]);
               setQuickFilterObjective([]);
               setQuickFilterAdTypes([]);
               setQuickFilterMediaPlan([]);
+              setQuickFilterPlatform([]);
               setAppliedFilters([]);
+            }}
+            onOpenAdvancedFilters={() => {
+              setTempFilters(appliedFilters.length > 0 ? [...appliedFilters] : [
+                { id: `filter-new-${Date.now()}`, field: "", operator: "", values: [] },
+              ]);
+              setShowFiltersDropdown(true);
+            }}
+            onOpenQuickFilter={(category) => {
+              if (category === "status") setQfOpenStatus(true);
+              else if (category === "adTypes") setQfOpenAdTypes(true);
+              else if (category === "platform") setQfOpenPlatform(true);
+              else if (category === "objective") setQfOpenObjective(true);
             }}
           />
         </main>
@@ -2920,25 +3200,6 @@ function App() {
           }}
         />
 
-        {/* Critical Campaigns Drawer */}
-        <CriticalCampaignsDrawer
-          open={showCriticalDrawer}
-          onOpenChange={setShowCriticalDrawer}
-          campaigns={campaigns}
-          calculateCampaignHealth={calculateCampaignHealth}
-          mode="critical"
-          onNavigateToTab={() => setActiveViewFilter("attention")}
-        />
-
-        {/* All Issues Drawer */}
-        <CriticalCampaignsDrawer
-          open={showAllIssuesDrawer}
-          onOpenChange={setShowAllIssuesDrawer}
-          campaigns={campaigns}
-          calculateCampaignHealth={calculateCampaignHealth}
-          mode="all"
-          onNavigateToTab={() => setActiveViewFilter("attention")}
-        />
       </div>
       <Toaster />
     </DndProvider>

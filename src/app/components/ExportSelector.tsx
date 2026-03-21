@@ -5,9 +5,9 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/app/components/ui/pop
 export function ExportSelector() {
   const [isOpen, setIsOpen] = useState(false);
 
-  const handleExport = (format: 'csv' | 'pdf') => {
-    // Handle export functionality
-    console.log(`Exporting as ${format}`);
+  const handleExport = () => {
+    // Handle CSV export — includes all campaigns in current filter, all visible columns
+    console.log("Exporting as CSV");
     setIsOpen(false);
   };
 
@@ -22,15 +22,9 @@ export function ExportSelector() {
         <div className="py-2">
           <button
             className="w-full text-left px-4 py-2.5 hover:bg-gray-50 text-sm text-gray-900"
-            onClick={() => handleExport('csv')}
+            onClick={handleExport}
           >
             Export as CSV
-          </button>
-          <button
-            className="w-full text-left px-4 py-2.5 hover:bg-gray-50 text-sm text-gray-900"
-            onClick={() => handleExport('pdf')}
-          >
-            Export as PDF
           </button>
         </div>
       </PopoverContent>

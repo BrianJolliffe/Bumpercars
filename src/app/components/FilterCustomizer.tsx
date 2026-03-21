@@ -34,83 +34,251 @@ interface FilterCustomizerProps {
 }
 
 const filterFieldLabels: Record<string, string> = {
-  name: "Name",
   id: "ID",
+  name: "Name",
   status: "Status",
+  destination: "Ad Type",
   objective: "Objective",
-  adTypes: "Ad Types",
   mediaChannel: "Media Channel",
-  targeting: "Targeting",
+  platform: "Platform",
   startDate: "Start Date",
   endDate: "End Date",
   mediaPlan: "Media Plan",
-  audience: "Audience",
-  budgetSpent: "Budget Spent",
-  flightCompleted: "% Flight Completed",
-  productGroup: "Product Group",
-  recentlyLaunched: "Recently Launched",
-  recentlyChanged: "Recently Changed",
+  brandId: "Brand ID",
+  lastModified: "Last Modified",
   pacing: "Pacing",
+  budget: "Budget",
+  spend: "Spend",
+  budgetSpent: "% Budget Spent",
+  remainingBudget: "Remaining Budget",
+  flightCompleted: "% Flight Completed",
+  budgetAtRisk: "Budget at Risk",
+  totalSales: "Total Sales",
+  onlineSales: "Online Sales",
+  offlineSales: "Offline Sales",
+  roasTotal: "Total ROAS",
+  roasOnline: "Online ROAS",
+  roasOffline: "Offline ROAS",
+  clicks: "Clicks",
   impressions: "Impressions",
-  ctc: "CTC",
-  cpr: "CPR",
-  roas: "ROAS",
+  ctr: "CTR",
+  cpc: "CPC",
   cpm: "CPM",
+  conversionRate: "Conversion Rate",
 };
 
 // Define operators for each field type
 const fieldOperators: Record<string, string[]> = {
-  name: ["is", "is not"],
-  id: ["is", "is not"],
-  status: ["is", "is not"],
-  objective: ["is", "is not"],
-  adTypes: ["is", "is not"],
-  mediaChannel: ["is", "is not"],
-  targeting: ["contains", "does not contain"],
+  id: ["equals", "contains", "does not contain"],
+  name: ["equals", "contains", "does not contain"],
+  status: ["equals", "contains", "does not contain"],
+  destination: ["equals", "contains", "does not contain"],
+  objective: ["equals", "contains", "does not contain"],
+  mediaChannel: ["equals", "contains", "does not contain"],
+  platform: ["equals", "contains", "does not contain"],
   startDate: ["is on", "is on or before", "is on or after"],
   endDate: ["is on", "is on or before", "is on or after"],
-  mediaPlan: ["is", "is not"],
+  mediaPlan: ["equals", "contains", "does not contain"],
+  brandId: ["is any of", "is none of"],
+  lastModified: ["is on", "is on or before", "is on or after"],
+  pacing: ["is greater than", "is less than", "is between"],
+  budget: ["is greater than", "is less than", "is between"],
+  spend: ["is greater than", "is less than", "is between"],
+  budgetSpent: ["is greater than", "is less than", "is between"],
+  remainingBudget: ["is greater than", "is less than", "is between"],
+  flightCompleted: ["is greater than", "is less than", "is between"],
+  budgetAtRisk: ["is greater than", "is less than", "is between"],
+  totalSales: ["is greater than", "is less than", "is between"],
+  onlineSales: ["is greater than", "is less than", "is between"],
+  offlineSales: ["is greater than", "is less than", "is between"],
+  roasTotal: ["is greater than", "is less than", "is between"],
+  roasOnline: ["is greater than", "is less than", "is between"],
+  roasOffline: ["is greater than", "is less than", "is between"],
+  clicks: ["is greater than", "is less than", "is between"],
+  impressions: ["is greater than", "is less than", "is between"],
+  ctr: ["is greater than", "is less than", "is between"],
+  cpc: ["is greater than", "is less than", "is between"],
+  cpm: ["is greater than", "is less than", "is between"],
+  conversionRate: ["is greater than", "is less than", "is between"],
 };
 
 // Define the input type for field 3
-type InputType = "text" | "dropdown" | "date";
+type InputType = "text" | "dropdown" | "date" | "multi-text";
 
 const fieldInputTypes: Record<string, InputType> = {
-  name: "text",
   id: "text",
+  name: "text",
   status: "dropdown",
+  destination: "dropdown",
   objective: "dropdown",
-  adTypes: "dropdown",
   mediaChannel: "dropdown",
-  targeting: "dropdown",
+  platform: "dropdown",
   startDate: "date",
   endDate: "date",
   mediaPlan: "text",
-  audience: "dropdown",
-  productGroup: "dropdown",
+  brandId: "multi-text",
+  lastModified: "date",
   pacing: "dropdown",
+  budget: "text",
+  spend: "text",
+  budgetSpent: "text",
+  remainingBudget: "text",
+  flightCompleted: "text",
+  budgetAtRisk: "text",
+  totalSales: "text",
+  onlineSales: "text",
+  offlineSales: "text",
+  roasTotal: "text",
+  roasOnline: "text",
+  roasOffline: "text",
+  clicks: "text",
+  impressions: "text",
+  ctr: "text",
+  cpc: "text",
+  cpm: "text",
+  conversionRate: "text",
 };
 
 const filterOptions: Record<string, string[]> = {
-  status: ["Draft", "On Hold", "Running", "Rejected", "Ended"],
+  status: [
+    "Running", "Draft", "Scheduled", "Ended", "On Hold", "Rejected", "Paused",
+    "Paused by a user", "Paused by system",
+    "Awaiting Verification", "Awaiting Verification by Retailer",
+    "Awaiting Verification by Vantage", "Awaiting Verification by Ad Platforms",
+    "Awaiting Retailer Approval", "Awaiting Brand Approval",
+    "Awaiting Audience", "Awaiting Tracking Setup", "Awaiting External Approval",
+  ],
+  destination: ["Product Listing Ads", "Auction Banner", "Google Search", "Google PMAX", "Pinterest Shopping", "Pinterest Static Pins", "Meta"],
   objective: ["Awareness", "Consideration", "Conversion"],
-  adTypes: ["In Grid", "Carousel", "Banner", "Premium Banner"],
-  startDate: [],
-  endDate: [],
-  mediaPlan: [],
   mediaChannel: ["Onsite", "Offsite"],
-  targeting: ["Geotargeting", "Keyword Targeting"],
-  audience: ["Audience 1", "Audience 2", "Audience 3"],
-  productGroup: ["Product Group A", "Product Group B", "Product Group C"],
+  platform: ["Meta", "Google Search", "Google PMAX", "Pinterest"],
   pacing: ["Under-pacing (<80%)", "On track (80% - 100%)", "Over-pacing (>100%)"],
 };
+
+function MultiTextInput({
+  filterId,
+  values,
+  disabled,
+  onAdd,
+  onRemove,
+}: {
+  filterId: string;
+  values: string[];
+  disabled: boolean;
+  onAdd: (id: string, raw: string) => void;
+  onRemove: (id: string, value: string) => void;
+}) {
+  const [inputValue, setInputValue] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" || e.key === ",") {
+      e.preventDefault();
+      if (inputValue.trim()) {
+        onAdd(filterId, inputValue);
+        setInputValue("");
+      }
+    }
+    if (e.key === "Backspace" && inputValue === "" && values.length > 0) {
+      onRemove(filterId, values[values.length - 1]);
+    }
+  };
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    const pasted = e.clipboardData.getData("text");
+    onAdd(filterId, pasted);
+    setInputValue("");
+  };
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          className="w-[180px] justify-between text-left"
+          disabled={disabled}
+        >
+          <span className={values.length === 0 ? "text-gray-400" : "text-gray-900 truncate"}>
+            {values.length === 0
+              ? "Enter IDs..."
+              : `${values.length} selected`}
+          </span>
+          <ChevronDown className="w-4 h-4 ml-2 flex-shrink-0" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[320px] p-3" align="start">
+        <div className="space-y-2">
+          <div className="flex items-center gap-1.5">
+            <Input
+              ref={inputRef}
+              type="text"
+              placeholder="Type or paste IDs..."
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
+              className="flex-1 text-sm"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-shrink-0 text-xs px-2"
+              onClick={() => {
+                if (inputValue.trim()) {
+                  onAdd(filterId, inputValue);
+                  setInputValue("");
+                }
+              }}
+            >
+              Add
+            </Button>
+          </div>
+          <p className="text-xs text-gray-400">
+            Separate with commas, newlines, or semicolons
+          </p>
+          {values.length > 0 && (
+            <ScrollArea className="max-h-[200px]">
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {values.map((v) => (
+                  <span
+                    key={v}
+                    className="inline-flex items-center gap-1 rounded-md bg-orange-50 border border-orange-200 px-2 py-0.5 text-xs font-medium text-orange-800"
+                  >
+                    {v}
+                    <button
+                      onClick={() => onRemove(filterId, v)}
+                      className="text-orange-400 hover:text-orange-700 transition-colors"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            </ScrollArea>
+          )}
+          {values.length > 1 && (
+            <button
+              onClick={() => {
+                values.forEach(v => onRemove(filterId, v));
+              }}
+              className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              Clear all
+            </button>
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 export function FilterCustomizer({ open, onOpenChange, onApplyFilters, currentFilters }: FilterCustomizerProps) {
   const [filters, setFilters] = useState<FilterRule[]>([
     {
       id: "filter-1",
       field: "",
-      operator: "Equal to",
+      operator: "equals",
       values: [],
     }
   ]);
@@ -125,7 +293,7 @@ export function FilterCustomizer({ open, onOpenChange, onApplyFilters, currentFi
           {
             id: "filter-1",
             field: "",
-            operator: "Equal to",
+            operator: "equals",
             values: [],
           }
         ]);
@@ -137,7 +305,7 @@ export function FilterCustomizer({ open, onOpenChange, onApplyFilters, currentFi
     setFilters([...filters, {
       id: `filter-${Date.now()}`,
       field: "",
-      operator: "Equal to",
+      operator: "equals",
       values: [],
     }]);
   };
@@ -179,6 +347,26 @@ export function FilterCustomizer({ open, onOpenChange, onApplyFilters, currentFi
     ));
   };
 
+  const addMultiTextValues = (id: string, raw: string) => {
+    const parsed = raw
+      .split(/[,\n\r;]+/)
+      .map(v => v.trim())
+      .filter(Boolean);
+    if (parsed.length === 0) return;
+    setFilters(filters.map(f => {
+      if (f.id !== id) return f;
+      const merged = [...new Set([...f.values, ...parsed])];
+      return { ...f, values: merged };
+    }));
+  };
+
+  const removeMultiTextValue = (id: string, value: string) => {
+    setFilters(filters.map(f => {
+      if (f.id !== id) return f;
+      return { ...f, values: f.values.filter(v => v !== value) };
+    }));
+  };
+
   const handleApply = () => {
     // Keep all filter rows with a field selected (including preloaded ones with empty values)
     const filtersWithFields = filters.filter(f => f.field);
@@ -188,12 +376,21 @@ export function FilterCustomizer({ open, onOpenChange, onApplyFilters, currentFi
     onOpenChange(false);
   };
 
+  const updateBetweenValue = (id: string, index: 0 | 1, value: string) => {
+    setFilters(filters.map(f => {
+      if (f.id !== id) return f;
+      const newValues = [...f.values];
+      newValues[index] = value;
+      return { ...f, values: newValues };
+    }));
+  };
+
   const handleCancel = () => {
     // Reset to initial state
     setFilters([{
       id: "filter-1",
       field: "",
-      operator: "Equal to",
+      operator: "equals",
       values: [],
     }]);
     onOpenChange(false);
@@ -233,30 +430,30 @@ export function FilterCustomizer({ open, onOpenChange, onApplyFilters, currentFi
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent className="w-[220px] max-h-[300px] overflow-y-auto" align="start">
-                      {/* Campaign Settings Section */}
+                      {/* Campaign Setup Section */}
                       <DropdownMenuLabel className="bg-gray-50 text-xs font-semibold text-gray-500 uppercase tracking-wider">
                         Campaign Setup
                       </DropdownMenuLabel>
-                      <DropdownMenuItem onClick={() => updateFilterField(filter.id, "name")}>
-                        Name
-                      </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => updateFilterField(filter.id, "id")}>
                         ID
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => updateFilterField(filter.id, "name")}>
+                        Name
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => updateFilterField(filter.id, "status")}>
                         Status
                       </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => updateFilterField(filter.id, "destination")}>
+                        Ad Type
+                      </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => updateFilterField(filter.id, "objective")}>
                         Objective
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => updateFilterField(filter.id, "adTypes")}>
-                        Ad Types
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => updateFilterField(filter.id, "mediaChannel")}>
                         Media Channel
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => updateFilterField(filter.id, "targeting")}>
-                        Targeting
+                      <DropdownMenuItem onClick={() => updateFilterField(filter.id, "platform")}>
+                        Platform
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => updateFilterField(filter.id, "startDate")}>
                         Start Date
@@ -267,48 +464,80 @@ export function FilterCustomizer({ open, onOpenChange, onApplyFilters, currentFi
                       <DropdownMenuItem onClick={() => updateFilterField(filter.id, "mediaPlan")}>
                         Media Plan
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => updateFilterField(filter.id, "audience")}>
-                        Audience
+                      <DropdownMenuItem onClick={() => updateFilterField(filter.id, "brandId")}>
+                        Brand ID
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => updateFilterField(filter.id, "budgetSpent")}>
-                        Budget Spent
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => updateFilterField(filter.id, "flightCompleted")}>
-                        % Flight Completed
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => updateFilterField(filter.id, "productGroup")}>
-                        Product Group
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => updateFilterField(filter.id, "recentlyLaunched")}>
-                        Recently Launched
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => updateFilterField(filter.id, "recentlyChanged")}>
-                        Recently Changed
+                      <DropdownMenuItem onClick={() => updateFilterField(filter.id, "lastModified")}>
+                        Last Modified
                       </DropdownMenuItem>
                       
                       <DropdownMenuSeparator />
                       
-                      {/* Performance Section */}
                       <DropdownMenuLabel className="bg-gray-50 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                        Performance
+                        Within Budget &amp; Pacing
                       </DropdownMenuLabel>
                       <DropdownMenuItem onClick={() => updateFilterField(filter.id, "pacing")}>
                         Pacing
                       </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => updateFilterField(filter.id, "budget")}>
+                        Budget
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => updateFilterField(filter.id, "spend")}>
+                        Spend
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => updateFilterField(filter.id, "budgetSpent")}>
+                        % Budget Spent
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => updateFilterField(filter.id, "remainingBudget")}>
+                        Remaining Budget
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => updateFilterField(filter.id, "flightCompleted")}>
+                        % Flight Completed
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => updateFilterField(filter.id, "budgetAtRisk")}>
+                        Budget at Risk
+                      </DropdownMenuItem>
+                      
+                      <DropdownMenuSeparator />
+                      
+                      <DropdownMenuLabel className="bg-gray-50 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                        Performance
+                      </DropdownMenuLabel>
+                      <DropdownMenuItem onClick={() => updateFilterField(filter.id, "totalSales")}>
+                        Total Sales
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => updateFilterField(filter.id, "onlineSales")}>
+                        Online Sales
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => updateFilterField(filter.id, "offlineSales")}>
+                        Offline Sales
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => updateFilterField(filter.id, "roasTotal")}>
+                        Total ROAS
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => updateFilterField(filter.id, "roasOnline")}>
+                        Online ROAS
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => updateFilterField(filter.id, "roasOffline")}>
+                        Offline ROAS
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => updateFilterField(filter.id, "clicks")}>
+                        Clicks
+                      </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => updateFilterField(filter.id, "impressions")}>
                         Impressions
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => updateFilterField(filter.id, "ctc")}>
-                        CTC
+                      <DropdownMenuItem onClick={() => updateFilterField(filter.id, "ctr")}>
+                        CTR
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => updateFilterField(filter.id, "cpr")}>
-                        CPR
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => updateFilterField(filter.id, "roas")}>
-                        ROAS
+                      <DropdownMenuItem onClick={() => updateFilterField(filter.id, "cpc")}>
+                        CPC
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => updateFilterField(filter.id, "cpm")}>
                         CPM
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => updateFilterField(filter.id, "conversionRate")}>
+                        Conversion Rate
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -345,106 +574,120 @@ export function FilterCustomizer({ open, onOpenChange, onApplyFilters, currentFi
                   </Popover>
 
                   {/* Values Input/Dropdown - conditional based on inputType */}
-                  {inputType === "text" ? (
-                    <div className="relative w-[180px]">
+                  {inputType === "multi-text" ? (
+                    <MultiTextInput
+                      filterId={filter.id}
+                      values={filter.values}
+                      disabled={!filter.field}
+                      onAdd={addMultiTextValues}
+                      onRemove={removeMultiTextValue}
+                    />
+                  ) : inputType === "text" && filter.operator === "is between" ? (
+                    <div className="flex items-center gap-1.5 w-[180px]">
                       <Input
                         type="text"
-                        placeholder="-"
+                        inputMode="decimal"
+                        placeholder="Min"
+                        value={filter.values[0] || ""}
+                        onChange={(e) => updateBetweenValue(filter.id, 0, e.target.value)}
+                        disabled={!filter.field}
+                        className="w-[82px]"
+                      />
+                      <span className="text-xs text-gray-400">–</span>
+                      <Input
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="Max"
+                        value={filter.values[1] || ""}
+                        onChange={(e) => updateBetweenValue(filter.id, 1, e.target.value)}
+                        disabled={!filter.field}
+                        className="w-[82px]"
+                      />
+                    </div>
+                  ) : inputType === "text" ? (
+                    <Input
+                      type="text"
+                      inputMode={filter.field === "budget" ? "decimal" : undefined}
+                      placeholder={
+                        filter.field === "budget"
+                          ? "Amount (e.g. 50000)"
+                          : "-"
+                      }
+                      value={filter.values[0] || ""}
+                      onChange={(e) => updateTextValue(filter.id, e.target.value)}
+                      disabled={!filter.field}
+                      className="w-[180px]"
+                    />
+                  ) : inputType === "date" ? (
+                    <div className="relative w-[180px]">
+                      <input
+                        type="date"
                         value={filter.values[0] || ""}
                         onChange={(e) => updateTextValue(filter.id, e.target.value)}
                         disabled={!filter.field}
-                        className="w-full pr-8"
+                        className="flex h-9 w-full min-w-0 rounded-md border border-input bg-input-background px-3 py-1 text-sm transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50"
+                        style={{ colorScheme: 'light', color: filter.values[0] ? undefined : 'transparent' }}
                       />
-                      {filters.length > 1 && (
-                        <button
-                          onClick={() => removeFilterRow(filter.id)}
-                          className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
-                  ) : inputType === "date" ? (
-                    <div className="relative w-[180px]">
-                      <div className="relative">
-                        <input
-                          type="date"
-                          value={filter.values[0] || ""}
-                          onChange={(e) => updateTextValue(filter.id, e.target.value)}
-                          disabled={!filter.field}
-                          className="flex h-9 w-full min-w-0 rounded-md border border-input bg-input-background px-3 py-1 text-sm transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50"
-                          style={{ colorScheme: 'light', color: filter.values[0] ? undefined : 'transparent' }}
-                        />
-                        {!filter.values[0] && (
-                          <div className="absolute inset-0 flex items-center px-3 pointer-events-none">
-                            <span className="text-sm text-gray-400">Select a date</span>
-                          </div>
-                        )}
-                      </div>
-                      {filters.length > 1 && (
-                        <button
-                          onClick={() => removeFilterRow(filter.id)}
-                          className="absolute -right-6 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
+                      {!filter.values[0] && (
+                        <div className="absolute inset-0 flex items-center px-3 pointer-events-none">
+                          <span className="text-sm text-gray-400">Select a date</span>
+                        </div>
                       )}
                     </div>
                   ) : (
-                    <div className="relative w-[180px] group/value">
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <Button 
-                            variant="outline" 
-                            className="w-full justify-between text-left"
-                            disabled={!filter.field}
-                          >
-                            <span className={filter.values.length === 0 ? "text-gray-400" : "text-gray-900 truncate"}>
-                              {filter.values.length === 0 
-                                ? "-"
-                                : filter.values.join(", ")
-                              }
-                            </span>
-                            {filters.length > 1 ? (
-                              <span
-                                role="button"
-                                tabIndex={0}
-                                onClick={(e) => { e.stopPropagation(); removeFilterRow(filter.id); }}
-                                onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); removeFilterRow(filter.id); } }}
-                                className="ml-2 flex-shrink-0 text-gray-400 hover:text-gray-600 opacity-0 group-hover/value:opacity-100 transition-opacity"
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button 
+                          variant="outline" 
+                          className="w-[180px] justify-between text-left"
+                          disabled={!filter.field}
+                        >
+                          <span className={filter.values.length === 0 ? "text-gray-400" : "text-gray-900 truncate"}>
+                            {filter.values.length === 0 
+                              ? "-"
+                              : filter.values.join(", ")
+                            }
+                          </span>
+                          <ChevronDown className="w-4 h-4 ml-2 flex-shrink-0" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[220px] p-0" align="start">
+                        <div className="max-h-[300px] overflow-y-auto py-1">
+                          {availableValues.length > 0 ? (
+                            availableValues.map((value) => (
+                              <div
+                                key={value}
+                                onClick={() => toggleFilterValue(filter.id, value)}
+                                className="flex items-center gap-3 px-4 py-2 hover:bg-gray-100 cursor-pointer"
                               >
-                                <X className="w-4 h-4" />
-                              </span>
-                            ) : (
-                              <ChevronDown className="w-4 h-4 ml-2 flex-shrink-0" />
-                            )}
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-[220px] p-0" align="start">
-                          <div className="max-h-[300px] overflow-y-auto py-1">
-                            {availableValues.length > 0 ? (
-                              availableValues.map((value) => (
-                                <div
-                                  key={value}
-                                  onClick={() => toggleFilterValue(filter.id, value)}
-                                  className="flex items-center gap-3 px-4 py-2 hover:bg-gray-100 cursor-pointer"
-                                >
-                                  <Checkbox
-                                    checked={filter.values.includes(value)}
-                                    onCheckedChange={() => toggleFilterValue(filter.id, value)}
-                                  />
-                                  <span className="text-sm text-gray-900">{value}</span>
-                                </div>
-                              ))
-                            ) : (
-                              <div className="px-4 py-2 text-sm text-gray-400">
-                                Select a filter first
+                                <Checkbox
+                                  checked={filter.values.includes(value)}
+                                  onCheckedChange={() => toggleFilterValue(filter.id, value)}
+                                />
+                                <span className="text-sm text-gray-900">{value}</span>
                               </div>
-                            )}
-                          </div>
-                        </PopoverContent>
-                      </Popover>
-                    </div>
+                            ))
+                          ) : (
+                            <div className="px-4 py-2 text-sm text-gray-400">
+                              Select a filter first
+                            </div>
+                          )}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  )}
+
+                  {/* Remove filter row button */}
+                  {filters.length > 1 ? (
+                    <button
+                      onClick={() => removeFilterRow(filter.id)}
+                      className="flex-shrink-0 text-gray-400 hover:text-gray-600 transition-colors"
+                      title="Remove filter"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  ) : (
+                    <div className="w-4 flex-shrink-0" />
                   )}
                 </div>
               );

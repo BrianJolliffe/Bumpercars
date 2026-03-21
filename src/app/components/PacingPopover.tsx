@@ -676,14 +676,14 @@ export function PacingPopover({ campaign, health, children }: PacingPopoverProps
                       )}
                     </div>
 
-                    {/* Budget Remaining */}
+                    {/* % of Budget at Risk */}
                     <div>
-                      <div className="text-[10px] text-gray-400 uppercase tracking-wide mb-0.5">Est. Budget Remaining</div>
-                      <div className="text-lg text-gray-900">
-                        {formatCurrency(Math.abs(spendDelta), true)}
+                      <div className="text-[10px] text-gray-400 uppercase tracking-wide mb-0.5">% of Budget at Risk</div>
+                      <div className={`text-lg ${isOnTrack ? "text-green-600" : isUnder ? "text-amber-600" : "text-red-600"}`}>
+                        {isOnTrack ? "0%" : `${Math.abs(deltaPercent).toFixed(1)}%`}
                       </div>
                       <div className="text-[11px] text-gray-500">
-                        {isOnTrack ? "On track" : `${Math.abs(deltaPercent).toFixed(1)}% unspent`}
+                        {isOnTrack ? "On track" : isUnder ? `${formatCurrency(Math.abs(spendDelta), true)} underspend` : `${formatCurrency(Math.abs(spendDelta), true)} overspend`}
                       </div>
                     </div>
                   </div>
