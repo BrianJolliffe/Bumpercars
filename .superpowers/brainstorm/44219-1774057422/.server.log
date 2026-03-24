@@ -1,0 +1,9 @@
+{"type":"server-started","port":61282,"host":"127.0.0.1","url_host":"localhost","url":"http://localhost:61282","screen_dir":"/Users/brianjolliffe/Library/CloudStorage/GoogleDrive-brian@vantageanalytics.com/My Drive/AI Test Folder/bumper cars/.superpowers/brainstorm/44219-1774057422"}
+{"type":"screen-added","file":"/Users/brianjolliffe/Library/CloudStorage/GoogleDrive-brian@vantageanalytics.com/My Drive/AI Test Folder/bumper cars/.superpowers/brainstorm/44219-1774057422/juice-directions.html"}
+{"type":"screen-updated","file":"/Users/brianjolliffe/Library/CloudStorage/GoogleDrive-brian@vantageanalytics.com/My Drive/AI Test Folder/bumper cars/.superpowers/brainstorm/44219-1774057422/juice-directions.html"}
+{"source":"user-event","type":"click","text":"B\n    \n      Visual Polish\n      Proper car sprites (not circles), arena glow effects, animated shrinking boundary, particle dust trails behind cars as they move.","choice":"visuals","id":null,"timestamp":1774057480748}
+{"source":"user-event","type":"click","text":"C\n    \n      Dramatic Eliminations\n      Explosion when eliminated, slow-mo on last kill, kill feed overlay, camera zoom on the final 1v1.","choice":"eliminations","id":null,"timestamp":1774057490407}
+{"source":"user-event","type":"click","text":"D\n    \n      Living Arena\n      Pulsing boundary that feels dangerous, warning flashes when arena shrinks, danger zone coloring near the edge, countdown urgency effects.","choice":"arena","id":null,"timestamp":1774057496619}
+{"type":"screen-added","file":"/Users/brianjolliffe/Library/CloudStorage/GoogleDrive-brian@vantageanalytics.com/My Drive/AI Test Folder/bumper cars/.superpowers/brainstorm/44219-1774057422/waiting.html"}
+{"type":"screen-updated","file":"/Users/brianjolliffe/Library/CloudStorage/GoogleDrive-brian@vantageanalytics.com/My Drive/AI Test Folder/bumper cars/.superpowers/brainstorm/44219-1774057422/waiting.html"}
+{"type":"server-stopped","reason":"idle timeout"}

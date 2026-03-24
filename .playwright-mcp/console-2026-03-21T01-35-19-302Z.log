@@ -1,0 +1,6 @@
+[   35157ms] [WARNING] WebSocket connection to 'ws://localhost:3001/parties/bumpercar/R5QX0VGP?_pk=07cb7349-d514-458b-adbd-8be493bab91c&name=Player1' failed: WebSocket is closed before the connection is established. @ http://localhost:3001/_next/static/chunks/0jb-__pnpm_0rr~aky._.js:558
+[   35159ms] [ERROR] [v0] WebSocket error: ErrorEvent @ http://localhost:3001/_next/static/chunks/0_yz_next_dist_0un1qii._.js:3272
+[   42863ms] [WARNING] WebSocket connection to 'ws://localhost:3001/parties/bumpercar/R5QX0VGP?_pk=07cb7349-d514-458b-adbd-8be493bab91c&name=Player1' failed: WebSocket is closed before the connection is established. @ http://localhost:3001/_next/static/chunks/0jb-__pnpm_0rr~aky._.js:558
+[   42863ms] [ERROR] [v0] WebSocket error: ErrorEvent @ http://localhost:3001/_next/static/chunks/0_yz_next_dist_0un1qii._.js:3272
+[   51678ms] [WARNING] WebSocket connection to 'ws://localhost:3001/parties/bumpercar/R5QX0VGP?_pk=07cb7349-d514-458b-adbd-8be493bab91c&name=Player1' failed: WebSocket is closed before the connection is established. @ http://localhost:3001/_next/static/chunks/0jb-__pnpm_0rr~aky._.js:558
+[   51679ms] [ERROR] [v0] WebSocket error: ErrorEvent @ http://localhost:3001/_next/static/chunks/0_yz_next_dist_0un1qii._.js:3272

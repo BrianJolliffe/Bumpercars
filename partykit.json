@@ -1,0 +1,8 @@
+{
+  "name": "bumper-car-battle",
+  "main": "party/bumpercar.ts",
+  "parties": {
+    "bumpercar": "party/bumpercar.ts"
+  },
+  "port": 1999
+}
