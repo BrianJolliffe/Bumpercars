@@ -82,6 +82,10 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
   // Handle keyboard input
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't capture keys when typing in an input
+      const tag = (e.target as HTMLElement)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return
+
       const key = e.key.toLowerCase()
       if (key === 'w' || key === 'arrowup') {
         keysRef.current.w = true
@@ -102,6 +106,9 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
     }
 
     const handleKeyUp = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return
+
       const key = e.key.toLowerCase()
       if (key === 'w' || key === 'arrowup') keysRef.current.w = false
       if (key === 'a' || key === 'arrowleft') keysRef.current.a = false
