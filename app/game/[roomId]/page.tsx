@@ -36,7 +36,7 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
 
     // Connect to PartyKit server
     const socket = new PartySocket({
-      host: 'localhost:1999',
+      host: process.env.NEXT_PUBLIC_PARTYKIT_HOST || 'localhost:1999',
       room: resolvedParams.roomId,
       party: 'bumpercar',
       query: { name: playerName },
