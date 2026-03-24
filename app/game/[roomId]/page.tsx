@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import PartySocket from 'partysocket'
 import { GameCanvas } from '@/components/game-canvas'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { GameState } from '@/lib/game/types'
 
 export default function GamePage({ params }: { params: Promise<{ roomId: string }> }) {
@@ -14,20 +15,25 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
   const [gameState, setGameState] = useState<GameState | null>(null)
   const [playerId, setPlayerId] = useState<string>('')
   const [playerName, setPlayerName] = useState<string>('')
+  const [nameInput, setNameInput] = useState<string>('')
+  const [needsName, setNeedsName] = useState(false)
   const [roomCode, setRoomCode] = useState<string>(resolvedParams.roomId)
   const socketRef = useRef<PartySocket | null>(null)
   const keysRef = useRef({ w: false, a: false, s: false, d: false })
 
   useEffect(() => {
-    // Decode player info from URL
+    // Decode player info from URL, or prompt for name if missing
     try {
       const playerData = searchParams.get('player')
       if (playerData) {
         const decoded = JSON.parse(atob(playerData))
         setPlayerName(decoded.playerName)
+      } else {
+        setNeedsName(true)
       }
     } catch (e) {
       console.error('Failed to decode player data')
+      setNeedsName(true)
     }
   }, [searchParams])
 
@@ -128,6 +134,45 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
     return () => clearInterval(interval)
   }, [playerId])
 
+  // If user arrived via direct link (no ?player= param), ask for their name
+  if (needsName) {
+    return (
+      <main className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center p-4">
+        <div className="w-full max-w-md">
+          <h1 className="text-4xl font-bold text-white mb-2 text-center">BUMPER CAR</h1>
+          <p className="text-center text-amber-400 font-semibold mb-8">JOINING ROOM {resolvedParams.roomId}</p>
+          <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-8 backdrop-blur">
+            <label className="block text-sm font-semibold text-slate-200 mb-2">YOUR NAME</label>
+            <Input
+              value={nameInput}
+              onChange={(e) => setNameInput(e.target.value)}
+              placeholder="Enter your name"
+              className="bg-slate-900 border-slate-700 text-white placeholder:text-slate-500 mb-4"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && nameInput.trim()) {
+                  setPlayerName(nameInput.trim())
+                  setNeedsName(false)
+                }
+              }}
+            />
+            <Button
+              onClick={() => {
+                if (nameInput.trim()) {
+                  setPlayerName(nameInput.trim())
+                  setNeedsName(false)
+                }
+              }}
+              disabled={!nameInput.trim()}
+              className="w-full bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold h-12 rounded-lg"
+            >
+              JOIN GAME
+            </Button>
+          </div>
+        </div>
+      </main>
+    )
+  }
+
   if (!gameState) {
     return (
       <main className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center p-4">
@@ -183,7 +228,16 @@ function LobbyView({
       <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-8 backdrop-blur mb-8">
         <div className="mb-8">
           <p className="text-slate-400 text-sm mb-2">ROOM CODE</p>
-          <p className="text-3xl font-bold text-amber-400 font-mono">{roomCode}</p>
+          <p className="text-3xl font-bold text-amber-400 font-mono mb-3">{roomCode}</p>
+          <Button
+            onClick={() => {
+              const url = `${window.location.origin}/game/${roomCode}`
+              navigator.clipboard.writeText(url)
+            }}
+            className="bg-slate-700 hover:bg-slate-600 text-white font-semibold text-sm h-8 px-4 rounded"
+          >
+            COPY INVITE LINK
+          </Button>
         </div>
 
         <div className="mb-8">
