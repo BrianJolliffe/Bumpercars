@@ -197,7 +197,7 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
       {(gameState.status === 'countdown' || gameState.status === 'playing') && (
         <GameView gameState={gameState} playerId={playerId} playerName={playerName} />
       )}
-      {gameState.status === 'countdown' && <CountdownOverlay countdown={gameState.countdown} round={gameState.tournamentRound} totalRounds={gameState.totalRounds} />}
+      {gameState.status === 'countdown' && <CountdownOverlay countdown={gameState.countdown} round={gameState.tournamentRound} totalRounds={gameState.totalRounds} isSpectating={gameState.promotedPlayers.includes(playerId)} />}
       {gameState.status === 'roundEnd' && <RoundEndOverlay gameState={gameState} playerId={playerId} />}
       {gameState.status === 'finished' && <LoserView gameState={gameState} playerId={playerId} socketRef={socketRef} />}
     </main>
@@ -283,7 +283,7 @@ function LobbyView({
   )
 }
 
-function CountdownOverlay({ countdown, round, totalRounds }: { countdown: number; round: number; totalRounds: number }) {
+function CountdownOverlay({ countdown, round, totalRounds, isSpectating }: { countdown: number; round: number; totalRounds: number; isSpectating: boolean }) {
   const isFinal = round === totalRounds
 
   return (
@@ -292,7 +292,9 @@ function CountdownOverlay({ countdown, round, totalRounds }: { countdown: number
         <p className="text-slate-300 text-lg font-semibold mb-2 drop-shadow-lg">
           {isFinal ? 'FINAL ROUND' : `ROUND ${round} of ${totalRounds}`}
         </p>
-        <p className="text-slate-300 text-2xl font-semibold mb-4 drop-shadow-lg">GET READY</p>
+        <p className="text-slate-300 text-2xl font-semibold mb-4 drop-shadow-lg">
+          {isSpectating ? 'SPECTATING' : 'GET READY'}
+        </p>
         <p className="text-9xl font-black text-amber-400 animate-pulse drop-shadow-[0_0_40px_rgba(251,191,36,0.5)]">
           {countdown > 0 ? countdown : 'GO!'}
         </p>
@@ -314,6 +316,8 @@ function GameView({
   const activePlayers = Object.values(gameState.players).filter((p) => !p.eliminated)
   const isFinal = gameState.tournamentRound === gameState.totalRounds
   const isPromoted = gameState.promotedPlayers.includes(playerId)
+  const isEliminated = currentPlayer?.eliminated && !isPromoted
+  const isSpectating = isPromoted || isEliminated
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -332,7 +336,42 @@ function GameView({
         </div>
       </div>
 
-      <GameCanvas gameState={gameState} playerId={playerId} />
+      {/* Spectator banner */}
+      {isSpectating && gameState.status === 'playing' && (
+        <div className={`mb-4 rounded-lg p-3 text-center border ${
+          isPromoted
+            ? 'bg-green-500/10 border-green-500/30'
+            : 'bg-red-500/10 border-red-500/30'
+        }`}>
+          <p className={`text-sm font-bold uppercase tracking-widest ${
+            isPromoted ? 'text-green-400' : 'text-red-400'
+          }`}>
+            {isPromoted ? 'You\'re safe — spectating' : 'Eliminated — spectating'}
+          </p>
+          <p className="text-slate-400 text-xs mt-1">
+            {isPromoted
+              ? `Watching from the sidelines. ${activePlayers.length} players still fighting.`
+              : `Knocked out of bounds! ${activePlayers.length} players remain.`
+            }
+          </p>
+        </div>
+      )}
+
+      <div className="relative">
+        <GameCanvas gameState={gameState} playerId={playerId} />
+        {/* Spectator overlay badge on the canvas */}
+        {isSpectating && gameState.status === 'playing' && (
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10">
+            <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider backdrop-blur-sm ${
+              isPromoted
+                ? 'bg-green-500/20 text-green-300 border border-green-500/30'
+                : 'bg-red-500/20 text-red-300 border border-red-500/30'
+            }`}>
+              Spectating
+            </span>
+          </div>
+        )}
+      </div>
 
       <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="bg-slate-800 rounded p-3 border border-slate-700">
@@ -351,7 +390,9 @@ function GameView({
         </div>
         <div className="bg-slate-800 rounded p-3 border border-slate-700">
           <p className="text-slate-400 text-xs">Controls</p>
-          <p className="text-white font-bold text-sm">WASD / Arrows</p>
+          <p className="text-white font-bold text-sm">
+            {isSpectating ? 'Watching...' : 'WASD / Arrows'}
+          </p>
         </div>
       </div>
     </div>
