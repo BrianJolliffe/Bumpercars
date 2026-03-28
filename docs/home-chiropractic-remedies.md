@@ -90,10 +90,46 @@ Your scan reveals an **S-curve compensatory pattern** — your body is essential
 ### Theracane / Hook-Shaped Tool
 - Hook over shoulder to reach right thoracic trigger points you can't reach otherwise
 
-### Massage Gun
-- Low-to-medium setting on right thoracic and left lumbar paraspinals
-- 60-90 sec per area
-- Avoid bony prominences and cervical spine
+### Massage Gun — Detailed Protocol
+
+**Settings:** Low-to-medium speed. Use a round ball or flat head attachment (not the bullet/pointed tip, which is too aggressive for paraspinals).
+
+**Target Area 1 — Right Mid-Back (T5 region, your worst area):**
+- Locate your right shoulder blade. The T5 area is at the middle/bottom of the scapula, about 1-2 inches to the right of the spine.
+- Work the muscles between the spine and the right scapula border (rhomboids + right erector spinae).
+- Move slowly up and down in a strip from the mid-scapula to just below the scapula. 90-120 seconds.
+
+**Target Area 2 — Right Lower Mid-Back (T9 region, second worst area):**
+- T9 is roughly at the bottom of your ribcage on the right side, about 1-2 inches from the spine.
+- Work in slow vertical strips along the right paraspinal muscles at this level. 90-120 seconds.
+- You can also sweep horizontally along the bottom rib on the right side where muscles attach.
+
+**Target Area 3 — Right Upper Back (T1-T3 region):**
+- This is between the base of your neck and the top of your right shoulder blade.
+- Target the right upper trapezius and the paraspinal muscles near the cervicothoracic junction.
+- Use lighter pressure here — this area is more sensitive. 60 seconds.
+
+**Target Area 4 — Left Lower Back (L1-L5, the compensation zone):**
+- L1 is at waist level, about 1-2 inches left of the spine.
+- Work down from the waist to just above the left hip (L5/sacrum area).
+- Move in slow vertical strips along the left erector spinae and quadratus lumborum (the muscle between the bottom rib and the hip bone on the left). 90-120 seconds.
+
+**Target Area 5 — Left Glute/Piriformis (bonus — often involved in lumbar compensation):**
+- The left piriformis sits deep in the left buttock, roughly in the center of the glute.
+- Use medium pressure with the ball attachment. 60 seconds.
+
+**Routine:**
+| When | Where | Duration |
+|------|-------|----------|
+| Before stretching | All 5 areas at low speed | 5-7 min total (warms tissue for better stretch) |
+| After foam rolling | Focus on T5 + T9 right side | 3-4 min (finishes what the roller started) |
+| Flare-up / acute tightness | Whichever area is tightest | 2-3 min as needed |
+
+**Avoid:**
+- Never use directly on the spine (bony spinous processes)
+- Never use on the front/side of the neck
+- Don't use the highest speed setting — it can cause muscles to guard/tighten further
+- If an area gets MORE tense or painful during use, stop and switch to heat instead
 
 ---
 
