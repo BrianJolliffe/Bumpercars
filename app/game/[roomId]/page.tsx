@@ -516,6 +516,16 @@ function GameView({
         </div>
       </div>
 
+      {me?.eliminated && gameState.status === 'playing' && (
+        <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-center">
+          <p className="text-sm font-bold uppercase tracking-widest text-red-400">Knocked out — spectating</p>
+          <p className="mt-1 text-xs text-slate-400">
+            {Object.values(gameState.players).filter((p) => !p.eliminated).length} still fighting. Call the survivor for
+            +2, and you still collect revenge if whoever got you goes out.
+          </p>
+        </div>
+      )}
+
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
         <div className="min-w-0 flex-1">
           <GameCanvas gameState={gameState} playerId={playerId} dirRef={dirRef} dashNonceRef={dashNonceRef} />
