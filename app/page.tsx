@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { HowToPlay } from '@/components/how-to-play'
 import { useRouter } from 'next/navigation'
 
 export default function Home() {
@@ -34,8 +35,8 @@ export default function Home() {
         {/* Header */}
         <div className="text-center mb-12">
           <h1 className="text-6xl font-bold text-white mb-2 tracking-tighter">BUMPER CAR</h1>
-          <p className="text-xl text-amber-400 font-semibold">BATTLE ROYALE</p>
-          <p className="text-sm text-slate-400 mt-4">Up to 16 Players • Tournament Mode • Find the Ultimate Loser</p>
+          <p className="text-xl text-amber-400 font-semibold">DEMOLITION LEAGUE</p>
+          <p className="text-sm text-slate-400 mt-4">Up to 16 Players • 5 Rounds • Crown a Champion, Expose the Ultimate Loser</p>
         </div>
 
         {/* Main Card */}
@@ -91,19 +92,24 @@ export default function Home() {
           </div>
         </div>
 
+        {/* How to Play */}
+        <div className="mt-8">
+          <HowToPlay />
+        </div>
+
         {/* Footer Info */}
-        <div className="mt-12 grid grid-cols-3 gap-4 text-center">
+        <div className="mt-8 grid grid-cols-3 gap-4 text-center">
           <div className="bg-slate-800/30 rounded p-4">
             <p className="text-amber-400 text-lg font-bold">16</p>
             <p className="text-slate-400 text-xs">Max Players</p>
           </div>
           <div className="bg-slate-800/30 rounded p-4">
-            <p className="text-amber-400 text-lg font-bold">N-1</p>
+            <p className="text-amber-400 text-lg font-bold">5</p>
             <p className="text-slate-400 text-xs">Rounds</p>
           </div>
           <div className="bg-slate-800/30 rounded p-4">
-            <p className="text-red-400 text-lg font-bold">1</p>
-            <p className="text-slate-400 text-xs">Loser</p>
+            <p className="text-red-400 text-lg font-bold">0</p>
+            <p className="text-slate-400 text-xs">Rounds Benched</p>
           </div>
         </div>
       </div>

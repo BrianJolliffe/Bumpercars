@@ -6,7 +6,8 @@
     "dev": "next dev & npx partykit dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test:impact": "node scripts/test-impact.ts"
   },
   "dependencies": {
     "matter-js": "^0.20.0",

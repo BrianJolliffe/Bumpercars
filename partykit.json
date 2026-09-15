@@ -4,5 +4,6 @@
   "parties": {
     "bumpercar": "party/bumpercar.ts"
   },
-  "port": 1999
+  "port": 1999,
+  "compatibilityDate": "2026-09-14"
 }

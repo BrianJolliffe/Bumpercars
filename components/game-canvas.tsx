@@ -1,44 +1,72 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
-import { GameState } from '@/lib/game/types'
+import { GameState, GameEvent } from '@/lib/game/types'
 import { drawArena } from '@/lib/game/arena-renderer'
-import { drawCar, updateTrails, clearTrails } from '@/lib/game/car-renderer'
+import { drawCar, updateTrails, clearTrails, drawStopMarker } from '@/lib/game/car-renderer'
 import { updateParticles, drawParticles, clearParticles } from '@/lib/game/particles'
 import { drawHUD } from '@/lib/game/hud-renderer'
+import { getPlayerColor } from '@/lib/game/colors'
+import { playShrinkWarning } from '@/lib/game/audio'
+import { LocalPredictor } from '@/lib/game/prediction'
+import { SnapshotBuffer, RENDER_DELAY_MS } from '@/lib/game/snapshots'
 import {
-  checkEliminations,
+  processEvents,
   updateShake,
   getShakeOffset,
   getKillFeed,
   isPaused,
   resetEffects,
+  updateFloatingTexts,
+  drawFloatingTexts,
 } from '@/lib/game/effects'
 
 interface GameCanvasProps {
   gameState: GameState
   playerId: string
+  /** Live steering vector, so the local car can be predicted instead of lagging. */
+  dirRef: React.RefObject<{ x: number; y: number }>
+  /** Increments on every dash input, so the predictor can fire it immediately. */
+  dashNonceRef: React.RefObject<number>
 }
 
 const CANVAS_SIZE = 800
 
-export function GameCanvas({ gameState, playerId }: GameCanvasProps) {
+export function GameCanvas({ gameState, playerId, dirRef, dashNonceRef }: GameCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const gameStateRef = useRef<GameState>(gameState)
+  const bufferRef = useRef<SnapshotBuffer>(new SnapshotBuffer())
+  const pendingEventsRef = useRef<Array<{ evt: GameEvent; at: number }>>([])
+  const seenEventIdsRef = useRef<Set<number>>(new Set())
+  const playerIdRef = useRef(playerId)
+  const latestStateRef = useRef<GameState>(gameState)
   const animFrameRef = useRef<number>(0)
   const lastTimeRef = useRef<number>(0)
+  const wasOutOfBoundsRef = useRef(false)
+  const predictorRef = useRef<LocalPredictor>(new LocalPredictor())
+  const frozenStateRef = useRef<GameState | null>(null)
+  const seenDashNonceRef = useRef(0)
   const startTimeRef = useRef<number>(0)
 
-  // Keep gameState ref in sync
+  playerIdRef.current = playerId
+  latestStateRef.current = gameState
+
+  // Feed each server broadcast into the interpolation buffer, and queue its
+  // effect events to fire when the render clock catches up to them.
   useEffect(() => {
-    gameStateRef.current = gameState
+    bufferRef.current.push(gameState)
+
+    const now = performance.now()
+    for (const evt of gameState.events ?? []) {
+      if (seenEventIdsRef.current.has(evt.id)) continue
+      seenEventIdsRef.current.add(evt.id)
+      pendingEventsRef.current.push({ evt, at: now })
+    }
+    if (seenEventIdsRef.current.size > 500) seenEventIdsRef.current.clear()
   }, [gameState])
 
-  // Animation loop — runs once, reads from ref
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
-
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
@@ -48,57 +76,142 @@ export function GameCanvas({ gameState, playerId }: GameCanvasProps) {
     resetEffects()
     clearParticles()
     clearTrails()
+    bufferRef.current.clear()
+    pendingEventsRef.current = []
+    seenEventIdsRef.current.clear()
+    // Seed with what we already have so the arena is on screen immediately,
+    // rather than staying black until the next server broadcast.
+    // Treat anything already in the buffer as history: a remount (each new
+    // round mounts a fresh canvas) must not replay the last round's explosions.
+    for (const evt of latestStateRef.current.events ?? []) {
+      seenEventIdsRef.current.add(evt.id)
+    }
+    bufferRef.current.push(latestStateRef.current)
+    predictorRef.current.reset()
 
     function render(timestamp: number) {
       const time = timestamp / 1000
-      const dt = lastTimeRef.current ? time - lastTimeRef.current : 1 / 60
+      const dt = lastTimeRef.current ? Math.min(0.05, time - lastTimeRef.current) : 1 / 60
       lastTimeRef.current = time
       const frameTime = time - startTimeRef.current
 
-      const state = gameStateRef.current
-      if (!state || !ctx) {
+      if (!ctx) {
         animFrameRef.current = requestAnimationFrame(render)
         return
       }
 
-      if (isPaused()) {
+      const now = performance.now()
+      const state = bufferRef.current.sample(now)
+      if (!state) {
         animFrameRef.current = requestAnimationFrame(render)
         return
       }
 
-      // Update systems
-      const activePlayers = Object.values(state.players).filter((p) => !p.eliminated).length
-      checkEliminations(state.players, activePlayers)
-      updateParticles(dt)
+      const colorFor = (id: string) => getPlayerColor(state.players[id]?.colorIndex ?? 0).body
+
+      // Fire events in step with the delayed render clock, so an explosion
+      // lands where the car is actually being drawn.
+      const due: GameEvent[] = []
+      pendingEventsRef.current = pendingEventsRef.current.filter((entry) => {
+        if (entry.at <= now - RENDER_DELAY_MS) {
+          due.push(entry.evt)
+          return false
+        }
+        return true
+      })
+      if (due.length) {
+        due.sort((a, b) => a.id - b.id)
+        processEvents(due, playerIdRef.current, colorFor)
+      }
+
+      const me = state.players[playerIdRef.current]
+
+      // Your own car is predicted forward from your live inputs so steering is
+      // immediate; everyone else stays on the delayed clock so contact lines up.
+      const newest = bufferRef.current.newest()
+      const authoritative = newest?.players[playerIdRef.current]
+      if (me && authoritative && !me.eliminated && state.status === 'playing') {
+        if (dashNonceRef.current !== seenDashNonceRef.current) {
+          seenDashNonceRef.current = dashNonceRef.current
+          predictorRef.current.dash(dirRef.current)
+        }
+        const predicted = predictorRef.current.step(authoritative, dirRef.current, dt * 1000)
+        me.x = predicted.x
+        me.y = predicted.y
+      } else {
+        predictorRef.current.reset()
+      }
+
+      const outNow = !!me && me.outOfBounds && !me.eliminated
+      if (outNow && !wasOutOfBoundsRef.current) playShrinkWarning()
+      wasOutOfBoundsRef.current = outNow
+
+      // Hit-stop on the round-deciding knockout: freeze the world, keep drawing.
+      const frozen = isPaused()
+      if (frozen && frozenStateRef.current) {
+        // Keep drawing the frozen frame so the decisive knockout actually lands.
+        Object.assign(state, frozenStateRef.current)
+      } else if (frozen) {
+        frozenStateRef.current = state
+      } else {
+        frozenStateRef.current = null
+      }
+
+      if (!frozen) {
+        updateParticles(dt)
+        updateFloatingTexts(dt)
+        updateTrails(state.players)
+      }
       updateShake(dt)
-      updateTrails(state.players)
 
       const shakeOffset = getShakeOffset()
 
-      // Clear
       ctx.fillStyle = '#0f172a'
       ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE)
 
-      // Apply screen shake
       ctx.save()
       ctx.translate(shakeOffset.x, shakeOffset.y)
 
-      // Draw arena
-      drawArena(ctx, state.arenaRadius, state.timeRemaining, CANVAS_SIZE, frameTime)
+      drawArena(
+        ctx,
+        state.arenaRadius,
+        state.centerX,
+        state.centerY,
+        state.obstacles ?? [],
+        CANVAS_SIZE,
+        frameTime,
+        state.suddenDeath
+      )
 
-      // Draw players
-      const playerIds = Object.keys(state.players)
-      for (const player of Object.values(state.players)) {
-        drawCar(ctx, player, player.id === playerId, playerIds)
+      const local = state.players[playerIdRef.current]
+      if (local && state.status === 'playing') {
+        drawStopMarker(ctx, local, state.arenaRadius, state.centerX, state.centerY)
       }
 
-      // Draw particles
+      // Eliminated cars first, so live cars always draw on top of the wreckage.
+      const cars = Object.values(state.players)
+      for (const player of cars) {
+        if (player.eliminated) drawCar(ctx, player, player.id === playerIdRef.current)
+      }
+      for (const player of cars) {
+        if (!player.eliminated) drawCar(ctx, player, player.id === playerIdRef.current)
+      }
+
       drawParticles(ctx)
+      drawFloatingTexts(ctx)
 
       ctx.restore()
 
-      // Draw HUD (not affected by screen shake)
-      drawHUD(ctx, state.timeRemaining, state.players, playerId, getKillFeed(), CANVAS_SIZE, frameTime)
+      drawHUD(
+        ctx,
+        state.timeRemaining,
+        state.suddenDeath,
+        state.players,
+        playerIdRef.current,
+        getKillFeed(),
+        CANVAS_SIZE,
+        frameTime
+      )
 
       animFrameRef.current = requestAnimationFrame(render)
     }
@@ -111,12 +224,12 @@ export function GameCanvas({ gameState, playerId }: GameCanvasProps) {
       clearParticles()
       clearTrails()
     }
-  }, [playerId])
+  }, [])
 
   return (
     <canvas
       ref={canvasRef}
-      className="border-2 border-amber-400 rounded-lg bg-slate-950 w-full max-w-2xl mx-auto"
+      className="w-full max-w-3xl mx-auto rounded-xl border-2 border-slate-700 bg-slate-950 shadow-[0_0_60px_rgba(15,23,42,0.9)]"
     />
   )
 }

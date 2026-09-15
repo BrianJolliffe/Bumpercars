@@ -14,3 +14,8 @@ next.user-config.*
 node_modules/
 .next/
 .DS_Store
+.vercel
+
+# Local PartyKit dev state (sqlite), not for the repo
+.partykit/
+*.tsbuildinfo

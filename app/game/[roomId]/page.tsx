@@ -1,15 +1,32 @@
 'use client'
 
 import { useEffect, useState, useRef, use } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import PartySocket from 'partysocket'
 import { GameCanvas } from '@/components/game-canvas'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { GameState } from '@/lib/game/types'
+import { GameState, Player } from '@/lib/game/types'
+import { getPlayerHex } from '@/lib/game/colors'
+import { HowToPlay } from '@/components/how-to-play'
+import {
+  unlockAudio,
+  setMuted,
+  playCountdownBeep,
+  playGo,
+  playRoundWin,
+  playFanfare,
+  playSadTrombone,
+} from '@/lib/game/audio'
+
+/** Matches DASH_COOLDOWN in party/bumpercar.ts. */
+const DASH_COOLDOWN_MS = 2000
+
+function rankPlayers(players: Record<string, Player>): Player[] {
+  return Object.values(players).sort((a, b) => b.score - a.score || b.totalKills - a.totalKills)
+}
 
 export default function GamePage({ params }: { params: Promise<{ roomId: string }> }) {
-  const router = useRouter()
   const searchParams = useSearchParams()
   const resolvedParams = use(params)
   const [gameState, setGameState] = useState<GameState | null>(null)
@@ -17,30 +34,46 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
   const [playerName, setPlayerName] = useState<string>('')
   const [nameInput, setNameInput] = useState<string>('')
   const [needsName, setNeedsName] = useState(false)
-  const [roomCode, setRoomCode] = useState<string>(resolvedParams.roomId)
+  const [muted, setMutedState] = useState(false)
+  const [isTouch, setIsTouch] = useState(false)
   const socketRef = useRef<PartySocket | null>(null)
   const keysRef = useRef({ w: false, a: false, s: false, d: false })
+  /** Steering vector actually sent to the server — analog on touch, unit on keys. */
+  const dirRef = useRef({ x: 0, y: 0 })
+  const dashNonceRef = useRef(0)
+  const dashReadyAtRef = useRef(0)
 
   useEffect(() => {
-    // Decode player info from URL, or prompt for name if missing
+    setIsTouch(window.matchMedia('(pointer: coarse)').matches)
+  }, [])
+
+  useEffect(() => {
     try {
       const playerData = searchParams.get('player')
       if (playerData) {
-        const decoded = JSON.parse(atob(playerData))
-        setPlayerName(decoded.playerName)
+        setPlayerName(JSON.parse(atob(playerData)).playerName)
       } else {
         setNeedsName(true)
       }
-    } catch (e) {
-      console.error('Failed to decode player data')
+    } catch {
       setNeedsName(true)
     }
   }, [searchParams])
 
+  // Browsers keep audio muted until the player interacts with the page.
+  useEffect(() => {
+    const unlock = () => unlockAudio()
+    window.addEventListener('pointerdown', unlock)
+    window.addEventListener('keydown', unlock)
+    return () => {
+      window.removeEventListener('pointerdown', unlock)
+      window.removeEventListener('keydown', unlock)
+    }
+  }, [])
+
   useEffect(() => {
     if (!playerName) return
 
-    // Connect to PartyKit server
     const socket = new PartySocket({
       host: process.env.NEXT_PUBLIC_PARTYKIT_HOST || 'localhost:1999',
       room: resolvedParams.roomId,
@@ -48,18 +81,12 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
       query: { name: playerName },
     })
 
-    socket.onopen = () => {
-      console.log('[v0] Connected to PartyKit')
-    }
-
     socket.onmessage = (event: MessageEvent) => {
       try {
         const data = JSON.parse(event.data)
-
         if (data.type === 'init') {
           setPlayerId(data.playerId)
           setGameState(data.gameState)
-          setRoomCode(resolvedParams.roomId)
         } else if (data.type === 'gameState') {
           setGameState(data.gameState)
         }
@@ -68,80 +95,142 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
       }
     }
 
-    socket.onerror = (error: Event) => {
-      console.error('[v0] WebSocket error:', error)
-    }
-
     socketRef.current = socket
-
-    return () => {
-      socket.close()
-    }
+    return () => socket.close()
   }, [playerName, resolvedParams.roomId])
 
-  // Handle keyboard input
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't capture keys when typing in an input
-      const tag = (e.target as HTMLElement)?.tagName
-      if (tag === 'INPUT' || tag === 'TEXTAREA') return
+  const sendInput = () => {
+    socketRef.current?.send(
+      JSON.stringify({ type: 'input', keys: keysRef.current, dir: dirRef.current })
+    )
+  }
 
-      const key = e.key.toLowerCase()
-      if (key === 'w' || key === 'arrowup') {
-        keysRef.current.w = true
+  /** Collapse the current key state into a unit steering vector, then push it. */
+  const syncKeyDirection = () => {
+    const x = (keysRef.current.d ? 1 : 0) - (keysRef.current.a ? 1 : 0)
+    const y = (keysRef.current.s ? 1 : 0) - (keysRef.current.w ? 1 : 0)
+    const len = Math.hypot(x, y)
+    dirRef.current = len > 0 ? { x: x / len, y: y / len } : { x: 0, y: 0 }
+    sendInput()
+  }
+
+  const setTouchDirection = (x: number, y: number) => {
+    dirRef.current = { x, y }
+    sendInput()
+  }
+
+  const sendDash = () => {
+    // Mirror the server's cooldown locally. Without this, mashing Space predicts
+    // dashes the server rejects and the car rubber-bands on every press.
+    const now = performance.now()
+    if (now < dashReadyAtRef.current) return
+    dashReadyAtRef.current = now + DASH_COOLDOWN_MS
+    dashNonceRef.current++
+    socketRef.current?.send(JSON.stringify({ type: 'dash' }))
+  }
+
+  const predictSurvivor = (id: string) =>
+    socketRef.current?.send(JSON.stringify({ type: 'predictSurvivor', playerId: id }))
+
+  useEffect(() => {
+    const keyFor = (raw: string): 'w' | 'a' | 's' | 'd' | null => {
+      const key = raw.toLowerCase()
+      if (key === 'w' || key === 'arrowup') return 'w'
+      if (key === 'a' || key === 'arrowleft') return 'a'
+      if (key === 's' || key === 'arrowdown') return 's'
+      if (key === 'd' || key === 'arrowright') return 'd'
+      return null
+    }
+
+    const isTyping = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName
+      return tag === 'INPUT' || tag === 'TEXTAREA'
+    }
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (isTyping(e)) return
+
+      if (e.key === ' ' || e.code === 'Space') {
         e.preventDefault()
+        if (!e.repeat) sendDash()
+        return
       }
-      if (key === 'a' || key === 'arrowleft') {
-        keysRef.current.a = true
-        e.preventDefault()
-      }
-      if (key === 's' || key === 'arrowdown') {
-        keysRef.current.s = true
-        e.preventDefault()
-      }
-      if (key === 'd' || key === 'arrowright') {
-        keysRef.current.d = true
-        e.preventDefault()
-      }
+
+      const k = keyFor(e.key)
+      if (!k) return
+      e.preventDefault()
+      if (keysRef.current[k]) return
+      keysRef.current[k] = true
+      syncKeyDirection()
     }
 
     const handleKeyUp = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement)?.tagName
-      if (tag === 'INPUT' || tag === 'TEXTAREA') return
+      if (isTyping(e)) return
+      const k = keyFor(e.key)
+      if (!k) return
+      keysRef.current[k] = false
+      syncKeyDirection()
+    }
 
-      const key = e.key.toLowerCase()
-      if (key === 'w' || key === 'arrowup') keysRef.current.w = false
-      if (key === 'a' || key === 'arrowleft') keysRef.current.a = false
-      if (key === 's' || key === 'arrowdown') keysRef.current.s = false
-      if (key === 'd' || key === 'arrowright') keysRef.current.d = false
+    // Losing focus mid-press would otherwise leave a key stuck down.
+    const handleBlur = () => {
+      keysRef.current = { w: false, a: false, s: false, d: false }
+      syncKeyDirection()
     }
 
     window.addEventListener('keydown', handleKeyDown)
     window.addEventListener('keyup', handleKeyUp)
-
+    window.addEventListener('blur', handleBlur)
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('keyup', handleKeyUp)
+      window.removeEventListener('blur', handleBlur)
     }
   }, [])
 
-  // Send input to server every frame
+  // Cheap keepalive so a dropped packet can't leave the server steering blind.
   useEffect(() => {
-    if (!socketRef.current || !playerId) return
-
-    const interval = setInterval(() => {
-      socketRef.current?.send(
-        JSON.stringify({
-          type: 'input',
-          keys: keysRef.current,
-        })
-      )
-    }, 1000 / 60)
-
+    if (!playerId) return
+    const interval = setInterval(sendInput, 200)
     return () => clearInterval(interval)
   }, [playerId])
 
-  // If user arrived via direct link (no ?player= param), ask for their name
+  const status = gameState?.status
+  const countdown = gameState?.countdown
+  useEffect(() => {
+    if (status !== 'countdown' || countdown === undefined) return
+    if (countdown > 0) playCountdownBeep()
+    else playGo()
+  }, [status, countdown])
+
+  const survivor = gameState?.roundSurvivor
+  useEffect(() => {
+    if (status === 'roundEnd' && survivor && survivor === playerId) playRoundWin()
+  }, [status, survivor, playerId])
+
+  const champion = gameState?.champion
+  const ultimateLoser = gameState?.ultimateLoser
+  useEffect(() => {
+    if (status !== 'finished') return
+    if (ultimateLoser === playerId) playSadTrombone()
+    else if (champion === playerId) playFanfare()
+  }, [status, champion, ultimateLoser, playerId])
+
+  const toggleMute = () => {
+    const next = !muted
+    setMutedState(next)
+    setMuted(next)
+  }
+
+  const muteButton = (
+    <button
+      onClick={toggleMute}
+      className="shrink-0 whitespace-nowrap rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs font-bold text-slate-300 hover:text-white"
+    >
+      {muted ? 'SOUND OFF' : 'SOUND ON'}
+    </button>
+  )
+
   if (needsName) {
     return (
       <main className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center p-4">
@@ -193,13 +282,32 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 p-4">
-      {gameState.status === 'waiting' && <LobbyView gameState={gameState} roomCode={roomCode} playerName={playerName} socketRef={socketRef} />}
-      {(gameState.status === 'countdown' || gameState.status === 'playing') && (
-        <GameView gameState={gameState} playerId={playerId} playerName={playerName} />
+      {gameState.status === 'waiting' && (
+        <LobbyView
+          gameState={gameState}
+          roomCode={resolvedParams.roomId}
+          socketRef={socketRef}
+          isHost={gameState.hostId === playerId}
+        />
       )}
-      {gameState.status === 'countdown' && <CountdownOverlay countdown={gameState.countdown} round={gameState.tournamentRound} totalRounds={gameState.totalRounds} />}
+      {(gameState.status === 'countdown' || gameState.status === 'playing') && (
+        <GameView
+          gameState={gameState}
+          playerId={playerId}
+          muteButton={muteButton}
+          dirRef={dirRef}
+          dashNonceRef={dashNonceRef}
+          isTouch={isTouch}
+          onPredict={predictSurvivor}
+          onSteer={setTouchDirection}
+          onDash={sendDash}
+        />
+      )}
+      {gameState.status === 'countdown' && (
+        <CountdownOverlay countdown={gameState.countdown} round={gameState.round} totalRounds={gameState.totalRounds} />
+      )}
       {gameState.status === 'roundEnd' && <RoundEndOverlay gameState={gameState} playerId={playerId} />}
-      {gameState.status === 'finished' && <LoserView gameState={gameState} playerId={playerId} socketRef={socketRef} />}
+      {gameState.status === 'finished' && <FinishedView gameState={gameState} playerId={playerId} socketRef={socketRef} />}
     </main>
   )
 }
@@ -207,40 +315,32 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
 function LobbyView({
   gameState,
   roomCode,
-  playerName,
   socketRef,
+  isHost,
 }: {
   gameState: GameState
   roomCode: string
-  playerName: string
   socketRef: React.RefObject<PartySocket | null>
+  isHost: boolean
 }) {
-  const playerCount = Object.keys(gameState.players).length
-  const canStart = playerCount >= 2
-
-  const handleStartGame = () => {
-    socketRef.current?.send(JSON.stringify({ type: 'startGame' }))
-  }
-
-  const handleAddBot = () => {
-    socketRef.current?.send(JSON.stringify({ type: 'addBot' }))
-  }
+  const players = Object.values(gameState.players)
+  const canStart = players.length >= 2
 
   return (
     <div className="max-w-2xl mx-auto mt-12">
       <h1 className="text-5xl font-bold text-white mb-2 text-center">BUMPER CAR</h1>
-      <p className="text-center text-amber-400 text-xl font-semibold mb-2">BATTLE ROYALE</p>
-      <p className="text-center text-slate-500 text-sm mb-12">Tournament Mode — Last one standing each round is safe. Final loser takes the L.</p>
+      <p className="text-center text-amber-400 text-xl font-semibold mb-2">DEMOLITION LEAGUE</p>
+      <p className="text-center text-slate-500 text-sm mb-12">
+        {gameState.totalRounds} rounds. Everyone plays every round. Survive long, knock people out, and score points —
+        lowest total is the Ultimate Loser.
+      </p>
 
       <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-8 backdrop-blur mb-8">
         <div className="mb-8">
           <p className="text-slate-400 text-sm mb-2">ROOM CODE</p>
           <p className="text-3xl font-bold text-amber-400 font-mono mb-3">{roomCode}</p>
           <Button
-            onClick={() => {
-              const url = `${window.location.origin}/game/${roomCode}`
-              navigator.clipboard.writeText(url)
-            }}
+            onClick={() => navigator.clipboard.writeText(`${window.location.origin}/game/${roomCode}`)}
             className="bg-slate-700 hover:bg-slate-600 text-white font-semibold text-sm h-8 px-4 rounded"
           >
             COPY INVITE LINK
@@ -248,11 +348,18 @@ function LobbyView({
         </div>
 
         <div className="mb-8">
-          <p className="text-slate-400 text-sm mb-4">PLAYERS JOINED ({playerCount}/16)</p>
+          <p className="text-slate-400 text-sm mb-4">PLAYERS JOINED ({players.length}/16)</p>
           <div className="grid grid-cols-2 gap-3 max-h-96 overflow-y-auto">
-            {Object.values(gameState.players).map((player) => (
-              <div key={player.id} className="bg-slate-900 rounded p-3 border border-slate-700">
-                <p className="text-white font-semibold">{player.name}</p>
+            {players.map((player) => (
+              <div
+                key={player.id}
+                className="flex items-center gap-2 bg-slate-900 rounded p-3 border border-slate-700"
+              >
+                <span
+                  className="h-3 w-3 shrink-0 rounded-full"
+                  style={{ backgroundColor: getPlayerHex(player.colorIndex) }}
+                />
+                <p className="text-white font-semibold truncate">{player.name}</p>
               </div>
             ))}
           </div>
@@ -260,39 +367,43 @@ function LobbyView({
 
         <div className="space-y-3">
           <Button
-            onClick={handleAddBot}
-            disabled={playerCount >= 16}
+            onClick={() => socketRef.current?.send(JSON.stringify({ type: 'addBot' }))}
+            disabled={!isHost || players.length >= 16}
             className="w-full bg-slate-700 hover:bg-slate-600 text-white font-bold h-10 rounded-lg disabled:opacity-50"
           >
             ADD BOT
           </Button>
           <Button
-            onClick={handleStartGame}
-            disabled={!canStart}
+            onClick={() => socketRef.current?.send(JSON.stringify({ type: 'startGame' }))}
+            disabled={!isHost || !canStart}
             className="w-full bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold h-12 rounded-lg disabled:opacity-50"
           >
-            {canStart ? 'START TOURNAMENT' : 'NEED AT LEAST 2 PLAYERS'}
+            {!isHost ? 'WAITING FOR HOST' : canStart ? 'START LEAGUE' : 'NEED AT LEAST 2 PLAYERS'}
           </Button>
         </div>
       </div>
 
-      <div className="text-center">
-        <p className="text-slate-400 text-sm">Share room code to invite friends</p>
-      </div>
+      <HowToPlay />
     </div>
   )
 }
 
-function CountdownOverlay({ countdown, round, totalRounds }: { countdown: number; round: number; totalRounds: number }) {
+function CountdownOverlay({
+  countdown,
+  round,
+  totalRounds,
+}: {
+  countdown: number
+  round: number
+  totalRounds: number
+}) {
   const isFinal = round === totalRounds
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
       <div className="text-center">
         <p className="text-slate-300 text-lg font-semibold mb-2 drop-shadow-lg">
-          {isFinal ? 'FINAL ROUND' : `ROUND ${round} of ${totalRounds}`}
+          {isFinal ? 'FINAL ROUND — 1.5\u00d7 POINTS' : `ROUND ${round} of ${totalRounds}`}
         </p>
-        <p className="text-slate-300 text-2xl font-semibold mb-4 drop-shadow-lg">GET READY</p>
         <p className="text-9xl font-black text-amber-400 animate-pulse drop-shadow-[0_0_40px_rgba(251,191,36,0.5)]">
           {countdown > 0 ? countdown : 'GO!'}
         </p>
@@ -301,99 +412,301 @@ function CountdownOverlay({ countdown, round, totalRounds }: { countdown: number
   )
 }
 
-function GameView({
+function Standings({
   gameState,
   playerId,
-  playerName,
+  showRoundPoints,
 }: {
   gameState: GameState
   playerId: string
-  playerName: string
+  showRoundPoints?: boolean
 }) {
-  const currentPlayer = gameState.players[playerId]
-  const activePlayers = Object.values(gameState.players).filter((p) => !p.eliminated)
-  const isFinal = gameState.tournamentRound === gameState.totalRounds
-  const isPromoted = gameState.promotedPlayers.includes(playerId)
+  const ranked = rankPlayers(gameState.players)
 
   return (
-    <div className="max-w-4xl mx-auto">
-      <div className="flex justify-between items-center mb-6">
+    <div className="space-y-1.5">
+      {ranked.map((p, i) => {
+        const isYou = p.id === playerId
+        return (
+          <div
+            key={p.id}
+            className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm ${
+              isYou ? 'bg-white/10 ring-1 ring-white/30' : 'bg-slate-900/60'
+            } ${p.eliminated && !showRoundPoints ? 'opacity-45' : ''}`}
+          >
+            <span className="w-5 text-xs font-black text-slate-500">{i + 1}</span>
+            <span
+              className="h-3 w-3 shrink-0 rounded-full"
+              style={{ backgroundColor: getPlayerHex(p.colorIndex) }}
+            />
+            <span className={`flex-1 truncate font-semibold ${isYou ? 'text-white' : 'text-slate-300'}`}>
+              {p.name}
+              {isYou && <span className="ml-1 text-xs text-slate-400">(you)</span>}
+            </span>
+            {showRoundPoints && p.roundPoints > 0 && (
+              <span className="text-xs font-bold text-green-400">+{p.roundPoints}</span>
+            )}
+            {!showRoundPoints && p.eliminated && <span className="text-[10px] font-bold text-red-400">OUT</span>}
+            {!showRoundPoints && !p.eliminated && p.kills > 0 && (
+              <span className="text-[10px] font-bold text-amber-400">{p.kills} KO</span>
+            )}
+            <span className="w-8 text-right font-mono font-bold text-amber-400">{p.score}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function GameView({
+  gameState,
+  playerId,
+  muteButton,
+  dirRef,
+  dashNonceRef,
+  isTouch,
+  onSteer,
+  onDash,
+  onPredict,
+}: {
+  gameState: GameState
+  playerId: string
+  muteButton: React.ReactNode
+  dirRef: React.RefObject<{ x: number; y: number }>
+  dashNonceRef: React.RefObject<number>
+  isTouch: boolean
+  onSteer: (x: number, y: number) => void
+  onDash: () => void
+  onPredict: (id: string) => void
+}) {
+  const me = gameState.players[playerId]
+  const isFinal = gameState.round === gameState.totalRounds
+
+  return (
+    <div className="mx-auto max-w-6xl">
+      <div className="mb-4 flex items-end justify-between">
         <div>
-          <h2 className="text-3xl font-bold text-white">
-            {isFinal ? 'FINAL ROUND' : `ROUND ${gameState.tournamentRound}`}
+          <h2 className="flex items-center gap-2 text-2xl font-black text-white">
+            {isFinal ? 'FINAL ROUND' : `ROUND ${gameState.round}`}
+            <span className="text-sm font-semibold text-slate-500">of {gameState.totalRounds}</span>
+            {isFinal && (
+              <span className="rounded bg-amber-500 px-2 py-0.5 text-xs font-black text-slate-950">
+                1.5&times; POINTS
+              </span>
+            )}
           </h2>
-          <p className="text-amber-400 font-mono">
-            {activePlayers.length} fighting • {gameState.promotedPlayers.length} safe
+          <p className="whitespace-nowrap text-sm font-semibold text-slate-400">
+            {me?.eliminated ? (
+              <span className="text-red-400">You&apos;re out — watching for revenge</span>
+            ) : isTouch ? (
+              <span>Drag to drive · tap DASH to ram</span>
+            ) : (
+              <span>
+                <span className="text-amber-400">WASD</span> drive · <span className="text-amber-400">SPACE</span> dash
+              </span>
+            )}
           </p>
         </div>
-        <div className="text-right">
-          <p className="text-5xl font-bold text-amber-400 font-mono">{gameState.timeRemaining.toFixed(1)}s</p>
-          <p className="text-slate-400 text-sm">Remaining</p>
+        <div className="flex items-center gap-4">
+          <div className="text-right">
+            <p className="font-mono text-3xl font-black text-amber-400">{me?.score ?? 0}</p>
+            <p className="whitespace-nowrap text-xs uppercase tracking-widest text-slate-500">Your points</p>
+          </div>
+          {muteButton}
         </div>
       </div>
 
-      <GameCanvas gameState={gameState} playerId={playerId} />
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+        <div className="min-w-0 flex-1">
+          <GameCanvas gameState={gameState} playerId={playerId} dirRef={dirRef} dashNonceRef={dashNonceRef} />
+        </div>
+        <aside className="w-full shrink-0 rounded-xl border border-slate-700 bg-slate-800/50 p-4 backdrop-blur lg:w-64">
+          <p className="mb-3 text-xs uppercase tracking-widest text-slate-500">League standings</p>
+          <Standings gameState={gameState} playerId={playerId} />
 
-      <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div className="bg-slate-800 rounded p-3 border border-slate-700">
-          <p className="text-slate-400 text-xs">Status</p>
-          <p className={`font-bold ${isPromoted ? 'text-green-400' : currentPlayer?.eliminated ? 'text-red-400' : 'text-white'}`}>
-            {isPromoted ? 'SAFE' : currentPlayer?.eliminated ? 'ELIMINATED' : 'FIGHTING'}
-          </p>
-        </div>
-        <div className="bg-slate-800 rounded p-3 border border-slate-700">
-          <p className="text-slate-400 text-xs">Round</p>
-          <p className="text-white font-bold">{gameState.tournamentRound} / {gameState.totalRounds}</p>
-        </div>
-        <div className="bg-slate-800 rounded p-3 border border-slate-700">
-          <p className="text-slate-400 text-xs">Players Left</p>
-          <p className="text-white font-bold text-lg">{activePlayers.length}</p>
-        </div>
-        <div className="bg-slate-800 rounded p-3 border border-slate-700">
-          <p className="text-slate-400 text-xs">Controls</p>
-          <p className="text-white font-bold text-sm">WASD / Arrows</p>
-        </div>
+          {me?.eliminated && gameState.status === 'playing' && (
+            <SurvivorPicker gameState={gameState} me={me} onPredict={onPredict} />
+          )}
+        </aside>
       </div>
+
+      {isTouch && !me?.eliminated && (
+        <TouchControls
+          onSteer={onSteer}
+          onDash={onDash}
+          dashReady={(me?.dashCharge ?? 0) >= 1}
+        />
+      )}
+    </div>
+  )
+}
+
+/**
+ * Being knocked out used to mean staring at the screen with no stake in the
+ * round. Calling the survivor is worth points, so you are still playing.
+ */
+function SurvivorPicker({
+  gameState,
+  me,
+  onPredict,
+}: {
+  gameState: GameState
+  me: Player
+  onPredict: (id: string) => void
+}) {
+  const alive = Object.values(gameState.players).filter((p) => !p.eliminated)
+  if (alive.length < 2) return null
+
+  return (
+    <div className="mt-4 border-t border-slate-700/60 pt-4">
+      <p className="mb-2 text-xs uppercase tracking-widest text-slate-500">
+        Call the survivor <span className="text-amber-400">+2</span>
+      </p>
+      <div className="space-y-1.5">
+        {alive.map((p) => {
+          const picked = me.prediction === p.id
+          return (
+            <button
+              key={p.id}
+              onClick={() => onPredict(p.id)}
+              className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors ${
+                picked
+                  ? 'bg-amber-500/20 ring-1 ring-amber-400/60'
+                  : 'bg-slate-900/60 hover:bg-slate-900'
+              }`}
+            >
+              <span
+                className="h-2.5 w-2.5 shrink-0 rounded-full"
+                style={{ backgroundColor: getPlayerHex(p.colorIndex) }}
+              />
+              <span className={`truncate font-semibold ${picked ? 'text-amber-300' : 'text-slate-300'}`}>
+                {p.name}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+const STICK_RADIUS = 56
+
+/**
+ * The invite is a link, so plenty of players will open it on a phone. A
+ * drag-anywhere stick plus a dash button makes the game playable for them —
+ * and the stick is analog, so touch steering is finer than WASD, not coarser.
+ */
+function TouchControls({
+  onSteer,
+  onDash,
+  dashReady,
+}: {
+  onSteer: (x: number, y: number) => void
+  onDash: () => void
+  dashReady: boolean
+}) {
+  const originRef = useRef<{ x: number; y: number } | null>(null)
+  const [knob, setKnob] = useState<{ x: number; y: number } | null>(null)
+
+  const updateFrom = (clientX: number, clientY: number) => {
+    const origin = originRef.current
+    if (!origin) return
+    const dx = clientX - origin.x
+    const dy = clientY - origin.y
+    const dist = Math.hypot(dx, dy)
+    const clamped = dist > STICK_RADIUS ? STICK_RADIUS / dist : 1
+    const kx = dx * clamped
+    const ky = dy * clamped
+    setKnob({ x: kx, y: ky })
+    onSteer(kx / STICK_RADIUS, ky / STICK_RADIUS)
+  }
+
+  const release = () => {
+    originRef.current = null
+    setKnob(null)
+    onSteer(0, 0)
+  }
+
+  return (
+    <div className="fixed inset-x-0 bottom-0 z-40 flex touch-none items-end justify-between p-6">
+      <div
+        className="relative h-36 w-36 touch-none rounded-full border-2 border-slate-600/70 bg-slate-900/60 backdrop-blur"
+        onPointerDown={(e) => {
+          e.currentTarget.setPointerCapture(e.pointerId)
+          const rect = e.currentTarget.getBoundingClientRect()
+          originRef.current = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+          updateFrom(e.clientX, e.clientY)
+        }}
+        onPointerMove={(e) => {
+          if (originRef.current) updateFrom(e.clientX, e.clientY)
+        }}
+        onPointerUp={release}
+        onPointerCancel={release}
+      >
+        <div
+          className="absolute left-1/2 top-1/2 h-14 w-14 rounded-full bg-amber-500/80"
+          style={{ transform: `translate(calc(-50% + ${knob?.x ?? 0}px), calc(-50% + ${knob?.y ?? 0}px))` }}
+        />
+      </div>
+
+      <button
+        onPointerDown={(e) => {
+          e.preventDefault()
+          onDash()
+        }}
+        className={`h-24 w-24 touch-none rounded-full border-2 text-sm font-black transition-colors ${
+          dashReady
+            ? 'border-orange-400 bg-orange-500/80 text-slate-950'
+            : 'border-slate-700 bg-slate-800/70 text-slate-500'
+        }`}
+      >
+        DASH
+      </button>
     </div>
   )
 }
 
 function RoundEndOverlay({ gameState, playerId }: { gameState: GameState; playerId: string }) {
-  const roundWinnerName = gameState.roundWinner ? gameState.players[gameState.roundWinner]?.name : 'Unknown'
-  const isYouTheWinner = gameState.roundWinner === playerId
-  const remainingCount = Object.keys(gameState.players).length - gameState.promotedPlayers.length
+  const survivor = gameState.roundSurvivor ? gameState.players[gameState.roundSurvivor] : undefined
+  const youSurvived = gameState.roundSurvivor === playerId
+  const me = gameState.players[playerId]
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm">
-      <div className="text-center max-w-lg px-4">
-        <p className="text-6xl mb-4">{isYouTheWinner ? '🛡️' : '⚔️'}</p>
-
-        <h2 className="text-4xl font-black text-amber-400 mb-2">ROUND {gameState.tournamentRound} COMPLETE</h2>
-
-        <div className="bg-slate-800/60 border border-amber-500/30 rounded-xl p-6 mb-6">
-          <p className="text-slate-400 text-sm uppercase tracking-widest mb-2">Survivor</p>
-          <p className="text-3xl font-black text-green-400">
-            {roundWinnerName}
-            {isYouTheWinner && <span className="text-lg text-slate-400 ml-2">(you!)</span>}
-          </p>
-          <p className="text-slate-500 text-sm mt-2">is now safe from elimination</p>
-        </div>
-
-        <p className="text-slate-400 text-lg">
-          <span className="text-amber-400 font-bold">{remainingCount}</span> players remain — next round starting...
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 backdrop-blur-sm p-4">
+      <div className="w-full max-w-md text-center">
+        <p className="mb-2 text-5xl">{youSurvived ? '🏁' : '💥'}</p>
+        <h2 className="mb-1 text-3xl font-black text-amber-400">ROUND {gameState.round} DONE</h2>
+        <p className="mb-5 text-slate-400">
+          Last car standing: <span className="font-bold text-green-400">{survivor?.name ?? '—'}</span>
         </p>
 
-        <div className="mt-4 flex justify-center gap-2">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="w-2 h-2 bg-amber-400 rounded-full animate-bounce" style={{ animationDelay: `${i * 0.2}s` }} />
-          ))}
+        {me && (
+          <div className="mb-5 rounded-xl border border-amber-500/30 bg-slate-800/60 p-4">
+            <p className="text-xs uppercase tracking-widest text-slate-500">You scored</p>
+            <p className="text-4xl font-black text-green-400">+{me.roundPoints}</p>
+            <p className="mt-1 text-xs text-slate-500">
+              {me.kills > 0 ? `${me.kills} knockout${me.kills > 1 ? 's' : ''} · ` : ''}
+              {me.revenge > 0 ? `${me.revenge} revenge · ` : ''}
+              {me.score} total
+            </p>
+          </div>
+        )}
+
+        <div className="mb-4 rounded-xl border border-slate-700/50 bg-slate-800/60 p-4">
+          <p className="mb-3 text-xs uppercase tracking-widest text-slate-500">Standings</p>
+          <Standings gameState={gameState} playerId={playerId} showRoundPoints />
         </div>
+
+        <p className="text-sm text-slate-400">
+          Round {gameState.round + 1} starting...
+        </p>
       </div>
     </div>
   )
 }
 
-function LoserView({
+function FinishedView({
   gameState,
   playerId,
   socketRef,
@@ -402,238 +715,49 @@ function LoserView({
   playerId: string
   socketRef: React.RefObject<PartySocket | null>
 }) {
-  const loserId = gameState.tournamentLoser
-  const loserName = loserId ? gameState.players[loserId]?.name : 'Unknown'
-  const isYouTheLoser = loserId === playerId
-  const totalPlayers = Object.keys(gameState.players).length
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-
-  // Sad particle effect — falling grey/red particles
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-
-    canvas.width = window.innerWidth
-    canvas.height = window.innerHeight
-
-    const particles: Array<{
-      x: number; y: number; vx: number; vy: number
-      size: number; color: string; rotation: number; rotationSpeed: number
-      life: number; shape: 'rect' | 'circle'
-    }> = []
-
-    const colors = isYouTheLoser
-      ? ['#ef4444', '#dc2626', '#991b1b', '#7f1d1d', '#450a0a', '#374151']
-      : ['#fbbf24', '#f59e0b', '#ef4444', '#22c55e', '#3b82f6', '#a855f7', '#ec4899', '#06b6d4']
-
-    // Initial burst
-    for (let i = 0; i < 150; i++) {
-      const angle = Math.random() * Math.PI * 2
-      const speed = isYouTheLoser ? 1 + Math.random() * 4 : 2 + Math.random() * 8
-      particles.push({
-        x: canvas.width / 2 + (Math.random() - 0.5) * 200,
-        y: canvas.height * 0.3,
-        vx: Math.cos(angle) * speed,
-        vy: isYouTheLoser ? Math.abs(Math.sin(angle) * speed) : Math.sin(angle) * speed - 3,
-        size: 4 + Math.random() * 8,
-        color: colors[Math.floor(Math.random() * colors.length)],
-        rotation: Math.random() * Math.PI * 2,
-        rotationSpeed: (Math.random() - 0.5) * 0.3,
-        life: 1,
-        shape: Math.random() > 0.5 ? 'rect' : 'circle',
-      })
-    }
-
-    let frameId: number
-    function animate() {
-      if (!ctx || !canvas) return
-      ctx.clearRect(0, 0, canvas.width, canvas.height)
-
-      // Spawn continuous particles from top
-      if (particles.length < 300) {
-        for (let i = 0; i < 3; i++) {
-          particles.push({
-            x: Math.random() * canvas.width,
-            y: -10,
-            vx: (Math.random() - 0.5) * 2,
-            vy: 1 + Math.random() * 3,
-            size: 3 + Math.random() * 6,
-            color: colors[Math.floor(Math.random() * colors.length)],
-            rotation: Math.random() * Math.PI * 2,
-            rotationSpeed: (Math.random() - 0.5) * 0.2,
-            life: 1,
-            shape: Math.random() > 0.5 ? 'rect' : 'circle',
-          })
-        }
-      }
-
-      for (let i = particles.length - 1; i >= 0; i--) {
-        const p = particles[i]
-        p.x += p.vx
-        p.vy += 0.08
-        p.y += p.vy
-        p.vx *= 0.99
-        p.rotation += p.rotationSpeed
-        p.life -= 0.002
-
-        if (p.y > canvas.height + 20 || p.life <= 0) {
-          particles.splice(i, 1)
-          continue
-        }
-
-        ctx.save()
-        ctx.translate(p.x, p.y)
-        ctx.rotate(p.rotation)
-        ctx.globalAlpha = Math.min(1, p.life * 2)
-        ctx.fillStyle = p.color
-
-        if (p.shape === 'rect') {
-          ctx.fillRect(-p.size / 2, -p.size / 4, p.size, p.size / 2)
-        } else {
-          ctx.beginPath()
-          ctx.arc(0, 0, p.size / 2, 0, Math.PI * 2)
-          ctx.fill()
-        }
-
-        ctx.restore()
-      }
-
-      frameId = requestAnimationFrame(animate)
-    }
-
-    frameId = requestAnimationFrame(animate)
-    return () => cancelAnimationFrame(frameId)
-  }, [isYouTheLoser])
-
-  // Build standings: promoted players in reverse order (first promoted = best), then the loser last
-  const standings = [
-    ...gameState.promotedPlayers.map((id) => ({
-      id,
-      name: gameState.players[id]?.name || 'Unknown',
-      status: 'safe' as const,
-    })),
-    ...(loserId ? [{
-      id: loserId,
-      name: loserName,
-      status: 'loser' as const,
-    }] : []),
-  ]
+  const champion = gameState.champion ? gameState.players[gameState.champion] : undefined
+  const loser = gameState.ultimateLoser ? gameState.players[gameState.ultimateLoser] : undefined
+  const youWon = gameState.champion === playerId
+  const youLost = gameState.ultimateLoser === playerId
 
   return (
-    <div className="relative min-h-screen flex items-center justify-center overflow-hidden">
-      {/* Particle canvas */}
-      <canvas
-        ref={canvasRef}
-        className="absolute inset-0 pointer-events-none z-10"
-      />
+    <div className="mx-auto max-w-xl py-10 text-center">
+      <p className="mb-4 text-7xl">{youWon ? '🏆' : youLost ? '💀' : '🏁'}</p>
+      <h1 className="mb-6 text-4xl font-black uppercase tracking-tight text-slate-300">League Over</h1>
 
-      {/* Radial glow background */}
-      <div className="absolute inset-0 z-0">
-        <div className={`absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full blur-[120px] ${
-          isYouTheLoser ? 'bg-red-500/20' : 'bg-amber-500/20'
-        }`} />
+      <div className="mb-4 rounded-2xl border-2 border-amber-500/40 bg-amber-500/10 p-6">
+        <p className="mb-2 text-xs uppercase tracking-widest text-slate-500">Champion</p>
+        <p className="text-4xl font-black text-amber-400">{champion?.name ?? '—'}</p>
+        <p className="mt-1 text-sm text-slate-500">{champion?.score ?? 0} points</p>
+        {youWon && <p className="mt-2 text-amber-300/70">That&apos;s you. Undisputed.</p>}
       </div>
 
-      <div className="relative z-20 max-w-2xl w-full mx-auto text-center px-4">
-        {/* Big loser reveal */}
-        <div className="mb-6">
-          <span className="text-8xl">{isYouTheLoser ? '💀' : '🏆'}</span>
-        </div>
+      <div className="mb-8 rounded-2xl border-2 border-red-500/40 bg-red-500/10 p-6">
+        <p className="mb-2 text-xs uppercase tracking-widest text-slate-500">The Ultimate Loser</p>
+        <p className="text-4xl font-black text-red-400">{loser?.name ?? '—'}</p>
+        <p className="mt-1 text-sm text-slate-500">{loser?.score ?? 0} points</p>
+        {youLost && <p className="mt-2 text-red-300/70">That&apos;s you. Better luck next time.</p>}
+      </div>
 
-        <div className="mb-8">
-          <h1 className="text-5xl font-black text-slate-400 mb-3 tracking-tight uppercase">Tournament Over</h1>
-          <div className="bg-red-500/10 border-2 border-red-500/40 rounded-2xl p-8 mb-4">
-            <p className="text-slate-500 text-xs uppercase tracking-widest mb-3">THE ULTIMATE LOSER</p>
-            <p className="text-6xl font-black text-red-400 animate-pulse">
-              {loserName}
-            </p>
-            {isYouTheLoser && (
-              <p className="text-red-300/60 text-lg mt-2">That&apos;s you. Better luck next time.</p>
-            )}
-          </div>
-          <p className="text-slate-500 text-sm">
-            Survived {gameState.totalRounds - 1} rounds... then lost the final 1v1
-          </p>
-        </div>
+      <div className="mb-8 rounded-xl border border-slate-700/50 bg-slate-800/60 p-5 text-left">
+        <p className="mb-3 text-xs uppercase tracking-widest text-slate-500">Final table</p>
+        <Standings gameState={gameState} playerId={playerId} />
+      </div>
 
-        {/* Stats bar */}
-        <div className="flex justify-center gap-8 mb-10">
-          <div className="text-center">
-            <p className="text-3xl font-black text-amber-400">{totalPlayers}</p>
-            <p className="text-xs text-slate-500 uppercase tracking-widest">Players</p>
-          </div>
-          <div className="w-px bg-slate-700" />
-          <div className="text-center">
-            <p className="text-3xl font-black text-amber-400">{gameState.totalRounds}</p>
-            <p className="text-xs text-slate-500 uppercase tracking-widest">Rounds</p>
-          </div>
-          <div className="w-px bg-slate-700" />
-          <div className="text-center">
-            <p className="text-3xl font-black text-red-400">1</p>
-            <p className="text-xs text-slate-500 uppercase tracking-widest">Loser</p>
-          </div>
-        </div>
-
-        {/* Final standings */}
-        <div className="bg-slate-800/60 border border-slate-700/50 rounded-xl p-6 backdrop-blur-sm mb-8">
-          <p className="text-slate-500 text-xs uppercase tracking-widest mb-4">Tournament Standings</p>
-          <div className="space-y-2">
-            {standings.map((entry, idx) => {
-              const isLoserEntry = entry.status === 'loser'
-              const isYou = entry.id === playerId
-              const rank = idx + 1
-              return (
-                <div
-                  key={entry.id}
-                  className={`flex justify-between items-center rounded-lg p-3 transition-all ${
-                    isLoserEntry
-                      ? 'bg-red-500/10 border border-red-500/30'
-                      : rank === 1
-                      ? 'bg-amber-500/10 border border-amber-500/30'
-                      : 'bg-slate-900/50'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <span className={`text-lg font-black w-8 ${
-                      isLoserEntry ? 'text-red-400' : rank === 1 ? 'text-amber-400' : 'text-slate-600'
-                    }`}>
-                      #{rank}
-                    </span>
-                    <span className={`font-semibold ${
-                      isLoserEntry ? 'text-red-300' : rank === 1 ? 'text-amber-300' : 'text-slate-400'
-                    }`}>
-                      {entry.name}
-                      {isYou && <span className="text-xs ml-2 text-slate-500">(you)</span>}
-                    </span>
-                  </div>
-                  <span className={`text-xs font-bold uppercase tracking-wider ${
-                    isLoserEntry ? 'text-red-400' : rank === 1 ? 'text-amber-400' : 'text-green-400/60'
-                  }`}>
-                    {isLoserEntry ? 'LOSER' : rank === 1 ? 'CHAMPION' : 'SAFE'}
-                  </span>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-
-        {/* Actions */}
-        <div className="flex gap-4 justify-center">
-          <Button
-            onClick={() => socketRef.current?.send(JSON.stringify({ type: 'restartGame' }))}
-            className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black px-12 py-4 rounded-xl text-lg transition-all hover:scale-105"
-          >
-            REMATCH
-          </Button>
-          <Button
-            onClick={() => window.location.href = '/'}
-            className="bg-slate-700 hover:bg-slate-600 text-white font-bold px-8 py-4 rounded-xl text-lg transition-all hover:scale-105"
-          >
-            NEW GAME
-          </Button>
-        </div>
+      <div className="flex justify-center gap-4">
+        <Button
+          onClick={() => socketRef.current?.send(JSON.stringify({ type: 'restartGame' }))}
+          disabled={gameState.hostId !== playerId}
+          className="rounded-xl bg-amber-500 px-10 py-4 text-lg font-black text-slate-950 transition-all hover:scale-105 hover:bg-amber-400 disabled:opacity-50 disabled:hover:scale-100"
+        >
+          {gameState.hostId === playerId ? 'REMATCH' : 'HOST DECIDES'}
+        </Button>
+        <Button
+          onClick={() => (window.location.href = '/')}
+          className="rounded-xl bg-slate-700 px-8 py-4 text-lg font-bold text-white transition-all hover:scale-105 hover:bg-slate-600"
+        >
+          NEW GAME
+        </Button>
       </div>
     </div>
   )
